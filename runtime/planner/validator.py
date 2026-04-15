@@ -7,11 +7,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable
 
-from jsonschema import ValidationError as JsonSchemaValidationError
-
 from runtime.models import Plan
 from runtime.planner.dependency_graph import assert_acyclic
-from runtime.schemas.loader import schema_validator
+from runtime.schemas.loader import SchemaValidationError, validate_plan
 
 
 class PlanValidationError(ValueError):
@@ -80,9 +78,10 @@ def validate_plan_dict(plan_data: Dict[str, Any]) -> Plan:
     2. Python semantic checks for cross-field rules.
     """
     try:
-        schema_validator("plan").validate(plan_data)
-    except JsonSchemaValidationError as exc:
-        raise PlanValidationError(f"schema validation failed: {exc.message}") from exc
+        validate_plan(plan_data)
+    except SchemaValidationError:
+        # Keep schema failures distinct so tests and callers can prove schema execution.
+        raise
 
     _require_fields(
         plan_data,

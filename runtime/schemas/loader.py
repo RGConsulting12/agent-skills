@@ -56,3 +56,26 @@ class SchemaRegistry:
             return f"{path}: {error.message}"
         return error.message
 
+
+_REGISTRY = SchemaRegistry()
+
+
+def schema_registry() -> SchemaRegistry:
+    """Return shared schema registry instance."""
+    return _REGISTRY
+
+
+def validate_plan(payload: Any) -> None:
+    """Validate plan payload against plan schema."""
+    _REGISTRY.validate("plan", payload)
+
+
+def validate_artifact(payload: Any) -> None:
+    """Validate artifact payload against artifact schema."""
+    _REGISTRY.validate("artifact", payload)
+
+
+def validate_run_state(payload: Any) -> None:
+    """Validate run-state payload against run_state schema."""
+    _REGISTRY.validate("run_state", payload)
+

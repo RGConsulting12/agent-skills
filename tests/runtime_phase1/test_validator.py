@@ -46,19 +46,19 @@ class ValidatorTests(unittest.TestCase):
     def test_missing_required_field_is_rejected(self) -> None:
         payload = sample_plan()
         del payload["plan_id"]
-        with self.assertRaises(PlanValidationError):
+        with self.assertRaises((PlanValidationError, SchemaValidationError)):
             validate_plan_dict(payload)
 
     def test_unknown_dependency_is_rejected(self) -> None:
         payload = sample_plan()
         payload["tasks"][1]["depends_on"] = ["missing"]
-        with self.assertRaises(PlanValidationError):
+        with self.assertRaises((PlanValidationError, SchemaValidationError)):
             validate_plan_dict(payload)
 
     def test_duplicate_task_id_is_rejected(self) -> None:
         payload = sample_plan()
         payload["tasks"][1]["task_id"] = "T1"
-        with self.assertRaises(PlanValidationError):
+        with self.assertRaises((PlanValidationError, SchemaValidationError)):
             validate_plan_dict(payload)
 
     def test_cycle_is_rejected(self) -> None:
@@ -78,13 +78,13 @@ class ValidatorTests(unittest.TestCase):
     def test_shell_requires_command(self) -> None:
         payload = sample_plan()
         payload["tasks"][1]["execution"] = {"kind": "shell"}
-        with self.assertRaises(PlanValidationError):
+        with self.assertRaises((PlanValidationError, SchemaValidationError)):
             validate_plan_dict(payload)
 
     def test_retry_policy_bounds(self) -> None:
         payload = copy.deepcopy(sample_plan())
         payload["tasks"][1]["retry_policy"]["max_retries"] = -1
-        with self.assertRaises(PlanValidationError):
+        with self.assertRaises((PlanValidationError, SchemaValidationError)):
             validate_plan_dict(payload)
 
     def test_json_schema_is_executed(self) -> None:
