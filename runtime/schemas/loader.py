@@ -1,4 +1,4 @@
-"""Schema loading and validation utilities for Phase 1 runtime."""
+"""Schema loading and validation utilities for runtime."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ class SchemaRegistry:
             "task": self._load("task.schema.json"),
             "artifact": self._load("artifact.schema.json"),
             "run_state": self._load("run_state.schema.json"),
+            "delegation": self._load("delegation.schema.json"),
         }
         resolver = RefResolver(base_uri=self.schema_dir.as_uri() + "/", referrer=self._schemas["plan"])
         self._validators = {
@@ -33,6 +34,7 @@ class SchemaRegistry:
             "task": Draft202012Validator(self._schemas["task"]),
             "artifact": Draft202012Validator(self._schemas["artifact"]),
             "run_state": Draft202012Validator(self._schemas["run_state"]),
+            "delegation": Draft202012Validator(self._schemas["delegation"]),
         }
 
     def _load(self, filename: str) -> Dict[str, Any]:
@@ -78,4 +80,14 @@ def validate_artifact(payload: Any) -> None:
 def validate_run_state(payload: Any) -> None:
     """Validate run-state payload against run_state schema."""
     _REGISTRY.validate("run_state", payload)
+
+
+def validate_delegation(payload: Any) -> None:
+    """Validate delegation payload against delegation schema."""
+    _REGISTRY.validate("delegation", payload)
+
+
+def validate_task(payload: Any) -> None:
+    """Validate task payload against task schema."""
+    _REGISTRY.validate("task", payload)
 

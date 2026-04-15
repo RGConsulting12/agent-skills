@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
-from runtime.schemas.loader import validate_artifact, validate_run_state
+from runtime.schemas.loader import validate_artifact, validate_run_state, validate_delegation
 
 
 class StateStore:
@@ -81,4 +81,15 @@ class StateStore:
         for artifact in artifacts:
             validate_artifact(artifact)
         return artifacts
+
+    def save_delegation(self, run_id: str, delegation_data: Dict[str, Any]) -> None:
+        validate_delegation(delegation_data)
+        path = self.run_dir(run_id) / "delegations" / f"{delegation_data['delegation_id']}.json"
+        self.atomic_write_json(path, delegation_data)
+
+    def load_delegation(self, run_id: str, delegation_id: str) -> Dict[str, Any]:
+        path = self.run_dir(run_id) / "delegations" / f"{delegation_id}.json"
+        data = dict(self.read_json(path))
+        validate_delegation(data)
+        return data
 

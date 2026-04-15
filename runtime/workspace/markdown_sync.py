@@ -46,6 +46,8 @@ def render_plan_markdown(plan: Plan, run_state: RunState, output_dir: str = ".")
         else:
             last_error = "none"
         produced = ", ".join(state.produced_artifacts) if state.produced_artifacts else "none"
+        active_delegation = state.active_delegation_id or "none"
+        delegation_ids = ", ".join(state.delegation_ids) if state.delegation_ids else "none"
         lines.extend(
             [
                 f"### {task.task_id} — {task.title}",
@@ -58,9 +60,27 @@ def render_plan_markdown(plan: Plan, run_state: RunState, output_dir: str = ".")
                 f"- attempts: `{state.attempts}` / retries `{state.max_retries}`",
                 f"- last_error: `{last_error}`",
                 f"- produced_artifacts: `{produced}`",
+                f"- active_delegation_id: `{active_delegation}`",
+                f"- delegation_ids: `{delegation_ids}`",
                 "",
             ]
         )
+    if run_state.delegations:
+        lines.extend(["## Delegations", ""])
+        for delegation_id in sorted(run_state.delegations.keys()):
+            record = run_state.delegations[delegation_id]
+            child_run_id = record.child_run_id
+            lines.extend(
+                [
+                    f"### {delegation_id}",
+                    f"- parent_task_id: `{record.parent_task_id}`",
+                    f"- child_run_id: `{child_run_id}`",
+                    f"- status: `{record.status}`",
+                    f"- lineage_depth: `{record.lineage_depth}`",
+                    f"- review_decision: `{record.review.decision}`",
+                    "",
+                ]
+            )
     _atomic_write_text(path, "\n".join(lines).rstrip() + "\n")
     return path
 
@@ -93,8 +113,11 @@ def render_todo_markdown(plan: Plan, run_state: RunState, output_dir: str = ".")
         artifacts_note = (
             f", artifacts={','.join(state.produced_artifacts)}" if state.produced_artifacts else ""
         )
+        delegation_note = ""
+        if state.active_delegation_id:
+            delegation_note = f", active_delegation={state.active_delegation_id}"
         lines.append(
-            f"- [{box}] `{task.task_id}` {task.title} ({state.status}{approval_note}{error_note}{artifacts_note})"
+            f"- [{box}] `{task.task_id}` {task.title} ({state.status}{approval_note}{error_note}{artifacts_note}{delegation_note})"
         )
     lines.append("")
     _atomic_write_text(path, "\n".join(lines))

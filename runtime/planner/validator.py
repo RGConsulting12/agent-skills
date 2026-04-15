@@ -46,12 +46,21 @@ def _validate_task(task: Dict[str, Any], index: int) -> None:
     if not isinstance(execution, dict):
         raise PlanValidationError(f"{scope}.execution must be an object")
     _require_fields(execution, ("kind",), f"{scope}.execution")
-    if execution["kind"] not in {"noop", "shell"}:
-        raise PlanValidationError(f"{scope}.execution.kind must be noop or shell")
+    if execution["kind"] not in {"noop", "shell", "delegate"}:
+        raise PlanValidationError(f"{scope}.execution.kind must be noop, shell, or delegate")
     if execution["kind"] == "shell":
         command = execution.get("command")
         if not isinstance(command, str) or not command.strip():
             raise PlanValidationError(f"{scope}.execution.command must be set for shell tasks")
+    if execution["kind"] == "delegate":
+        delegation = execution.get("delegation")
+        if not isinstance(delegation, dict):
+            raise PlanValidationError(f"{scope}.execution.delegation must be an object")
+        max_attempts = delegation.get("max_delegation_attempts")
+        if not isinstance(max_attempts, int) or max_attempts < 1:
+            raise PlanValidationError(
+                f"{scope}.execution.delegation.max_delegation_attempts must be >= 1"
+            )
     timeout = execution.get("timeout_seconds", 300)
     if not isinstance(timeout, int) or timeout < 1:
         raise PlanValidationError(f"{scope}.execution.timeout_seconds must be an integer >= 1")

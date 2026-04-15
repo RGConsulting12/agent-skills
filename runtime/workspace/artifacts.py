@@ -10,13 +10,23 @@ from runtime.workspace.storage import StateStore
 
 
 def create_artifact(
-    run_id: str, task_id: str, payload: ArtifactCreateInput, *, created_at: str | None = None
+    run_id: str,
+    task_id: str,
+    payload: ArtifactCreateInput,
+    *,
+    created_at: str | None = None,
+    producer_delegation_id: str | None = None,
+    producer_child_run_id: str | None = None,
+    lineage_depth: int | None = None,
 ) -> Artifact:
     """Create a typed artifact from adapter payload."""
     return Artifact(
         artifact_id=f"art-{uuid.uuid4().hex[:12]}",
         run_id=run_id,
         producer_task_id=task_id,
+        producer_delegation_id=producer_delegation_id,
+        producer_child_run_id=producer_child_run_id,
+        lineage_depth=lineage_depth,
         type=payload.type,
         status=payload.status,
         path=payload.path,

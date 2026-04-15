@@ -1,4 +1,4 @@
-"""CLI entrypoint for the Phase 1 runtime."""
+"""CLI entrypoint for the runtime."""
 
 from __future__ import annotations
 
@@ -107,6 +107,65 @@ def cmd_render_markdown(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_delegate_status(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    run_state = store.load_run_state(args.run_id)
+    delegations = run_state.get("delegations", {})
+    if args.task_id:
+        delegations = {
+            key: value for key, value in delegations.items() if value.get("parent_task_id") == args.task_id
+        }
+    if args.json:
+        print(json.dumps(delegations, indent=2, sort_keys=True))
+    else:
+        for delegation_id in sorted(delegations):
+            item = delegations[delegation_id]
+            print(
+                f"{delegation_id}: task={item.get('parent_task_id')} "
+                f"status={item.get('status')} child_run_id={item.get('child_run_id')}"
+            )
+    return 0
+
+
+def cmd_review_delegation(args: argparse.Namespace) -> int:
+    runner = _build_runner(args)
+    run_state = runner.review_delegation(
+        args.run_id,
+        args.delegation_id,
+        decision=args.decision,
+        reviewed_by=args.reviewed_by,
+        notes=args.notes,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": run_state.run_id,
+                "status": run_state.status,
+                "delegation_id": args.delegation_id,
+                "summary": run_state.summary,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def cmd_approve_action(args: argparse.Namespace) -> int:
+    runner = _build_runner(args)
+    run_state = runner.approve_action(args.run_id, args.category, args.target_id, args.approved_by)
+    print(
+        json.dumps(
+            {
+                "run_id": run_state.run_id,
+                "status": run_state.status,
+                "approved": {"category": args.category, "target_id": args.target_id},
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
 def cmd_trace(args: argparse.Namespace) -> int:
     logger = TraceLogger(args.logs_dir)
     events = logger.read_tail(args.run_id, tail=args.tail)
@@ -116,7 +175,7 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Phase 1 runtime CLI")
+    parser = argparse.ArgumentParser(description="Runtime CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     validate = subparsers.add_parser("validate-plan", help="Validate plan JSON")
@@ -174,6 +233,34 @@ def build_parser() -> argparse.ArgumentParser:
     trace.add_argument("--tail", type=int, default=20)
     trace.add_argument("--logs-dir", default=".agent-runtime/logs")
     trace.set_defaults(func=cmd_trace)
+
+    delegate_status = subparsers.add_parser("delegate-status", help="Show delegation status")
+    delegate_status.add_argument("--run-id", required=True)
+    delegate_status.add_argument("--task-id")
+    delegate_status.add_argument("--state-dir", default=".agent-runtime/state")
+    delegate_status.add_argument("--json", action="store_true")
+    delegate_status.set_defaults(func=cmd_delegate_status)
+
+    review = subparsers.add_parser("review-delegation", help="Review delegation result")
+    review.add_argument("--run-id", required=True)
+    review.add_argument("--delegation-id", required=True)
+    review.add_argument("--decision", required=True, choices=["accepted", "rejected"])
+    review.add_argument("--reviewed-by", required=True)
+    review.add_argument("--notes")
+    review.add_argument("--adapter", default="generic")
+    review.add_argument("--state-dir", default=".agent-runtime/state")
+    review.add_argument("--logs-dir", default=".agent-runtime/logs")
+    review.set_defaults(func=cmd_review_delegation)
+
+    approve_action = subparsers.add_parser("approve-action", help="Approve policy/action gate")
+    approve_action.add_argument("--run-id", required=True)
+    approve_action.add_argument("--category", required=True)
+    approve_action.add_argument("--target-id", required=True)
+    approve_action.add_argument("--approved-by", required=True)
+    approve_action.add_argument("--adapter", default="generic")
+    approve_action.add_argument("--state-dir", default=".agent-runtime/state")
+    approve_action.add_argument("--logs-dir", default=".agent-runtime/logs")
+    approve_action.set_defaults(func=cmd_approve_action)
 
     return parser
 

@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0",
+  "plan_id": "plan-phase2a-001",
+  "title": "Phase 2A delegated runtime sample",
+  "description": "Demonstrates runtime-managed delegation with review and artifact acceptance.",
+  "created_at": "2026-04-15T10:00:00Z",
+  "created_by": "agent-skills",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "title": "Bootstrap parent artifacts",
+      "priority": 10,
+      "approval_required": false,
+      "execution": {
+        "kind": "noop",
+        "emit_artifact": {
+          "type": "seed",
+          "status": "final",
+          "content": {
+            "message": "seed ready"
+          }
+        }
+      }
+    },
+    {
+      "task_id": "T2",
+      "title": "Run delegated child analysis",
+      "depends_on": [
+        "T1"
+      ],
+      "priority": 5,
+      "approval_required": false,
+      "execution": {
+        "kind": "delegate",
+        "delegation": {
+          "objective": "Run child checks and produce a child-report artifact",
+          "input_artifact_ids": [],
+          "copy_in_paths": [],
+          "tool_allowlist": [
+            "noop",
+            "shell"
+          ],
+          "path_allowlist": [
+            "runtime/examples"
+          ],
+          "path_denylist": [],
+          "max_steps": 3,
+          "timeout_seconds": 60,
+          "expected_artifact_types": [
+            "child-report"
+          ],
+          "max_delegation_attempts": 2,
+          "review_required": true,
+          "child_plan": {
+            "schema_version": "1.0",
+            "plan_id": "child-plan-phase2a-001",
+            "title": "Child delegated run",
+            "description": "Simple child plan",
+            "created_at": "2026-04-15T10:00:01Z",
+            "created_by": "agent-skills",
+            "tasks": [
+              {
+                "task_id": "C1",
+                "title": "Emit delegated output artifact",
+                "execution": {
+                  "kind": "noop",
+                  "emit_artifact": {
+                    "type": "child-report",
+                    "status": "final",
+                    "content": {
+                      "result": "child analysis complete"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task_id": "T3",
+      "title": "Finalize after delegated review",
+      "depends_on": [
+        "T2"
+      ],
+      "priority": 1,
+      "approval_required": false,
+      "execution": {
+        "kind": "noop",
+        "emit_artifact": {
+          "type": "final-summary",
+          "status": "final",
+          "content": {
+            "done": true
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "phase": "2A"
+  }
+}

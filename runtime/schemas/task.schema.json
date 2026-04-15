@@ -43,7 +43,8 @@
           "type": "string",
           "enum": [
             "noop",
-            "shell"
+            "shell",
+            "delegate"
           ]
         },
         "command": {
@@ -64,6 +65,85 @@
         },
         "emit_artifact": {
           "type": "object"
+        },
+        "delegation": {
+          "type": "object",
+          "required": [
+            "objective",
+            "tool_allowlist",
+            "path_allowlist",
+            "max_steps",
+            "timeout_seconds",
+            "expected_artifact_types",
+            "max_delegation_attempts",
+            "review_required"
+          ],
+          "properties": {
+            "objective": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input_artifact_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "copy_in_paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tool_allowlist": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "noop",
+                  "shell"
+                ]
+              }
+            },
+            "path_allowlist": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "path_denylist": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "max_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "expected_artifact_types": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "max_delegation_attempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "review_required": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -115,6 +195,29 @@
             "required": [
               "kind",
               "command"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "execution": {
+            "properties": {
+              "kind": {
+                "const": "delegate"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "execution": {
+            "required": [
+              "kind",
+              "delegation"
             ]
           }
         }

@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "delegation.schema.json",
+  "title": "Phase2ADelegation",
+  "type": "object",
+  "required": [
+    "delegation_id",
+    "parent_run_id",
+    "parent_task_id",
+    "lineage_depth",
+    "child_run_id",
+    "status",
+    "request",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "delegation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lineage_depth": {
+      "type": "integer",
+      "const": 1
+    },
+    "child_run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "created",
+        "running",
+        "submitted_for_review",
+        "accepted",
+        "rejected",
+        "failed",
+        "cancelled",
+        "exhausted"
+      ]
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "objective",
+        "tool_allowlist",
+        "path_allowlist",
+        "max_steps",
+        "timeout_seconds",
+        "expected_artifact_types",
+        "review_required"
+      ],
+      "properties": {
+        "objective": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "copy_in_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool_allowlist": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "noop",
+              "shell"
+            ]
+          },
+          "minItems": 1
+        },
+        "path_allowlist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "path_denylist": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_artifact_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "review_required": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "required": [
+        "status",
+        "summary",
+        "produced_artifact_ids",
+        "output_manifest",
+        "evidence",
+        "submitted_at"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "submitted_for_review",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "produced_artifact_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "output_manifest": {
+          "type": "object"
+        },
+        "evidence": {
+          "type": "object"
+        },
+        "submitted_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "review": {
+      "type": "object",
+      "required": [
+        "decision",
+        "reviewed_by",
+        "reviewed_at",
+        "notes"
+      ],
+      "properties": {
+        "decision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "accepted",
+            "rejected",
+            null
+          ]
+        },
+        "reviewed_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reviewed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "workspace_dir": {
+      "type": "string"
+    },
+    "artifacts_copied_back": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

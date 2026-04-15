@@ -1,13 +1,27 @@
-"""Plan runner for Phase 1 runtime."""
+"""Plan runner for Phase 2A runtime."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Tuple
 
 from runtime.adapters.host_adapter import HostAdapter
-from runtime.models import Plan, RunState, TaskApproval, TaskRuntimeState, now_iso
+from runtime.delegation.manager import DelegationManager
+from runtime.delegation.review import apply_review_decision
+from runtime.models import (
+    ActionApproval,
+    DelegationRecord,
+    DelegationRequest,
+    Plan,
+    RunState,
+    TaskApproval,
+    TaskRuntimeState,
+    now_iso,
+)
 from runtime.observability.logger import TraceLogger
 from runtime.observability.trace import make_event, new_trace_id, next_event_seq, next_span_id
+from runtime.policy.engine import PolicyActionError, PolicyEngine
 from runtime.orchestrator.failure import failure_from_exception, failure_from_result
 from runtime.orchestrator.retry import backoff_seconds, should_retry
 from runtime.planner.dependency_graph import has_live_nonterminal_tasks, select_next_task
@@ -28,6 +42,18 @@ class PlanRunner:
         self.store = store
         self.logger = logger
         self.adapter = adapter
+        self.policy = PolicyEngine()
+        self.delegation_manager = DelegationManager()
+
+
+@dataclass
+class DelegationOutcome:
+    """Outcome of inline child-run execution for delegation."""
+
+    success: bool
+    error_code: str | None = None
+    error_message: str | None = None
+    missing_outputs: List[str] | None = None
 
     def _emit_event(self, run_state: RunState, event_name: str, payload: dict | None = None) -> None:
         trace_id = run_state.metadata.setdefault("trace_id", new_trace_id())

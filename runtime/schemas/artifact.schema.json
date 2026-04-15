@@ -24,6 +24,22 @@
       "type": "string",
       "minLength": 1
     },
+    "producer_delegation_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "producer_child_run_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lineage_depth": {
+      "type": "integer",
+      "minimum": 0
+    },
     "type": {
       "type": "string",
       "minLength": 1

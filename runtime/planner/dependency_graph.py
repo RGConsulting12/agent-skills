@@ -78,7 +78,7 @@ def has_live_nonterminal_tasks(plan: Plan, run_state: RunState) -> bool:
         state = run_state.tasks[task.task_id]
         if state.status in {"completed", "failed", "cancelled"}:
             continue
-        if state.status in {"ready", "running", "pending_approval"}:
+        if state.status in {"ready", "running", "pending_approval", "delegating", "waiting_review"}:
             return True
         if state.status == "blocked" and not terminal_dependency_blocked(index[task.task_id], run_state):
             return True

@@ -13,7 +13,9 @@ _ALLOWED: Dict[str, Set[str]] = {
     "pending_approval": {"ready", "blocked", "cancelled"},
     "blocked": {"ready", "cancelled"},
     "ready": {"running", "cancelled"},
-    "running": {"completed", "ready", "failed", "cancelled"},
+    "running": {"completed", "ready", "failed", "cancelled", "delegating"},
+    "delegating": {"waiting_review", "ready", "failed", "cancelled"},
+    "waiting_review": {"completed", "ready", "failed", "cancelled"},
     "failed": {"cancelled"},
     "completed": set(),
     "cancelled": set(),
@@ -86,7 +88,11 @@ def refresh_nonterminal_statuses(plan: Plan, run_state: RunState) -> None:
     """Recompute pending_approval/blocked/ready states after each update."""
     for task in plan.tasks:
         state = run_state.tasks[task.task_id]
-        if state.status in TASK_TERMINAL_STATUSES or state.status == "running":
+        if state.status in TASK_TERMINAL_STATUSES or state.status in {
+            "running",
+            "delegating",
+            "waiting_review",
+        }:
             continue
         approved = (not state.approval.required) or state.approval.approved
         deps_ok = dependencies_completed(state, run_state)
@@ -105,6 +111,8 @@ def summarize_tasks(run_state: RunState) -> Dict[str, int]:
         "blocked": 0,
         "ready": 0,
         "running": 0,
+        "delegating": 0,
+        "waiting_review": 0,
         "completed": 0,
         "failed": 0,
         "cancelled": 0,
