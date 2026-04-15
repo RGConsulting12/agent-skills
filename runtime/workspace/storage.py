@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
+from runtime.schemas.loader import validate_artifact, validate_run_state
+
 
 class StateStore:
     """File-backed state store with atomic writes."""
@@ -58,17 +60,25 @@ class StateStore:
         return dict(self.read_json(self.plan_path(run_id)))
 
     def save_run_state(self, run_id: str, run_state_data: Dict[str, Any]) -> None:
+        validate_run_state(run_state_data)
         self.atomic_write_json(self.run_state_path(run_id), run_state_data)
 
     def load_run_state(self, run_id: str) -> Dict[str, Any]:
-        return dict(self.read_json(self.run_state_path(run_id)))
+        data = dict(self.read_json(self.run_state_path(run_id)))
+        validate_run_state(data)
+        return data
 
     def save_artifacts(self, run_id: str, artifacts: List[Dict[str, Any]]) -> None:
+        for artifact in artifacts:
+            validate_artifact(artifact)
         self.atomic_write_json(self.artifacts_path(run_id), artifacts)
 
     def load_artifacts(self, run_id: str) -> List[Dict[str, Any]]:
         path = self.artifacts_path(run_id)
         if not path.exists():
             return []
-        return list(self.read_json(path))
+        artifacts = list(self.read_json(path))
+        for artifact in artifacts:
+            validate_artifact(artifact)
+        return artifacts
 

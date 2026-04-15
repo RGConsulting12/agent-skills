@@ -43,6 +43,8 @@ class PlanRunner:
             payload=payload,
         )
         self.logger.log(run_state.run_id, event)
+        # Persist sequence metadata eagerly to reduce duplicate seq risk on crash.
+        self.store.save_run_state(run_state.run_id, run_state.to_dict())
 
     def init_run(self, plan: Plan, run_id: str) -> RunState:
         """Create initial typed run state."""
@@ -91,7 +93,22 @@ class PlanRunner:
         """Approve a task-level gate."""
         plan = self.load_plan(run_id)
         run_state = self.load_run_state(run_id)
+        if task_id not in run_state.tasks:
+            raise ValueError(f"unknown task_id '{task_id}'")
         task_state = run_state.tasks[task_id]
+        if not task_state.approval.required:
+            raise ValueError(f"task '{task_id}' does not require approval")
+        if task_state.status in {"completed", "failed", "cancelled"}:
+            raise ValueError(f"task '{task_id}' is terminal ({task_state.status})")
+        # Idempotent behavior: repeated approval is accepted as no-op.
+        if task_state.approval.approved:
+            self._emit_event(
+                run_state,
+                "task_approval_idempotent",
+                {"task_id": task_id, "approved_by": task_state.approval.approved_by},
+            )
+            self.store.save_run_state(run_id, run_state.to_dict())
+            return run_state
         task_state.approval.approved = True
         task_state.approval.approved_by = approved_by
         task_state.approval.approved_at = now_iso()
@@ -106,14 +123,18 @@ class PlanRunner:
         if states and all(status == "completed" for status in states):
             run_state.status = "completed"
             run_state.ended_at = run_state.ended_at or now_iso()
+        elif any(status in {"ready", "running"} for status in states):
+            run_state.status = "running"
+            run_state.ended_at = None
         elif any(status == "failed" for status in states):
             run_state.status = "failed"
             run_state.ended_at = run_state.ended_at or now_iso()
         elif not has_live_nonterminal_tasks(plan, run_state):
-            run_state.status = "failed"
-            run_state.ended_at = run_state.ended_at or now_iso()
+            run_state.status = "running"
+            run_state.ended_at = None
         else:
             run_state.status = "running"
+            run_state.ended_at = None
         if run_state.status != previous_status and run_state.status in {"completed", "failed"}:
             self._emit_event(run_state, f"run_{run_state.status}", {"status": run_state.status})
 

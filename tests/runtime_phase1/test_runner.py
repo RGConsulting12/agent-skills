@@ -115,6 +115,49 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(run_state.tasks["T1"].status, "failed")
         self.assertEqual(run_state.status, "failed")
 
+    def test_independent_branch_continues_after_failure(self) -> None:
+        plan = make_plan(
+            [
+                {
+                    "task_id": "A1",
+                    "title": "fail-branch",
+                    "priority": 10,
+                    "execution": {"kind": "shell", "command": "bash -lc 'exit 2'"},
+                    "retry_policy": {"max_retries": 0},
+                },
+                {
+                    "task_id": "B1",
+                    "title": "good-branch-1",
+                    "priority": 5,
+                    "execution": {"kind": "noop"},
+                },
+                {
+                    "task_id": "B2",
+                    "title": "good-branch-2",
+                    "depends_on": ["B1"],
+                    "priority": 4,
+                    "execution": {"kind": "noop"},
+                },
+            ]
+        )
+        runner = self.build_runner()
+        runner.init_run(plan, "run-branches")
+        # First step runs A1 (highest priority) and fails.
+        run_state, progressed = runner.step("run-branches")
+        self.assertTrue(progressed)
+        self.assertEqual(run_state.tasks["A1"].status, "failed")
+        self.assertEqual(run_state.status, "running")
+        # Next steps continue independent branch.
+        run_state, progressed = runner.step("run-branches")
+        self.assertTrue(progressed)
+        self.assertEqual(run_state.tasks["B1"].status, "completed")
+        self.assertEqual(run_state.status, "running")
+        run_state, progressed = runner.step("run-branches")
+        self.assertTrue(progressed)
+        self.assertEqual(run_state.tasks["B2"].status, "completed")
+        # Now terminal with at least one failed and no ready/running.
+        self.assertEqual(run_state.status, "failed")
+
     def test_run_completes_when_all_tasks_done(self) -> None:
         plan = make_plan([{"task_id": "T1", "title": "one", "execution": {"kind": "noop"}}])
         runner = self.build_runner()
@@ -140,6 +183,33 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(run_state.tasks["T1"].status, "pending_approval")
         run_state = runner.approve_task("run-approval", "T1", "human")
         self.assertEqual(run_state.tasks["T1"].status, "ready")
+
+    def test_approval_invariants_and_idempotency(self) -> None:
+        plan = make_plan(
+            [
+                {
+                    "task_id": "T1",
+                    "title": "requires approval",
+                    "approval_required": True,
+                    "execution": {"kind": "noop"},
+                },
+                {"task_id": "T2", "title": "no approval", "execution": {"kind": "noop"}},
+            ]
+        )
+        runner = self.build_runner()
+        runner.init_run(plan, "run-approve")
+        with self.assertRaisesRegex(ValueError, "unknown task_id"):
+            runner.approve_task("run-approve", "missing", "human")
+        with self.assertRaisesRegex(ValueError, "does not require approval"):
+            runner.approve_task("run-approve", "T2", "human")
+        first = runner.approve_task("run-approve", "T1", "alice")
+        second = runner.approve_task("run-approve", "T1", "bob")
+        self.assertEqual(first.tasks["T1"].approval.approved_by, "alice")
+        self.assertEqual(second.tasks["T1"].approval.approved_by, "alice")
+        # terminal task rejects approval attempts
+        runner.run_until_done("run-approve")
+        with self.assertRaisesRegex(ValueError, "terminal"):
+            runner.approve_task("run-approve", "T1", "charlie")
 
     def test_artifacts_persist(self) -> None:
         plan = make_plan(

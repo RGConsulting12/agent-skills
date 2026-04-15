@@ -6,6 +6,7 @@ import copy
 import unittest
 
 from runtime.planner.validator import PlanValidationError, validate_plan_dict
+from runtime.schemas.loader import SchemaValidationError
 
 
 def sample_plan() -> dict:
@@ -84,5 +85,11 @@ class ValidatorTests(unittest.TestCase):
         payload = copy.deepcopy(sample_plan())
         payload["tasks"][1]["retry_policy"]["max_retries"] = -1
         with self.assertRaises(PlanValidationError):
+            validate_plan_dict(payload)
+
+    def test_json_schema_is_executed(self) -> None:
+        payload = sample_plan()
+        payload["metadata"] = []  # schema requires object
+        with self.assertRaises(SchemaValidationError):
             validate_plan_dict(payload)
 

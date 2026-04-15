@@ -60,3 +60,14 @@ Generated files:
 python3 -m unittest discover -s tests/runtime_phase1 -p "test_*.py"
 ```
 
+## Hardening notes (Phase 1)
+
+- Run terminal semantics now allow independent ready/running work to continue after a branch failure. The run fails only when at least one task is failed and there is no ready/running work remaining.
+- JSON Schema is enforced in code for plan validation and at run_state/artifact persistence boundaries.
+- Task approvals enforce invariants (unknown IDs, non-approval tasks, terminal tasks are rejected) and repeated approvals are idempotent no-ops.
+- Trace sequence metadata is persisted after every event to reduce duplicate sequence numbers after abrupt termination.
+
+Remaining limitation:
+
+- If a crash happens between writing the event log line and persisting run_state metadata, the next process may reuse a sequence number. This window is small but not fully eliminated without transactional journaling.
+

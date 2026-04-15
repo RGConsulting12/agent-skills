@@ -48,6 +48,11 @@ class MarkdownTests(unittest.TestCase):
             self.assertTrue(todo_path.exists())
             self.assertIn("T1", plan_path.read_text(encoding="utf-8"))
             self.assertIn("[x]", todo_path.read_text(encoding="utf-8"))
+            plan_text = plan_path.read_text(encoding="utf-8")
+            self.assertIn("approved_by", plan_text)
+            self.assertIn("approved_at", plan_text)
+            self.assertIn("last_error", plan_text)
+            self.assertIn("produced_artifacts", plan_text)
 
     def test_markdown_edit_does_not_change_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

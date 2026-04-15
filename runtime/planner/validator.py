@@ -7,8 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable
 
+from jsonschema import ValidationError as JsonSchemaValidationError
+
 from runtime.models import Plan
 from runtime.planner.dependency_graph import assert_acyclic
+from runtime.schemas.loader import schema_validator
 
 
 class PlanValidationError(ValueError):
@@ -70,7 +73,17 @@ def _validate_task(task: Dict[str, Any], index: int) -> None:
 
 
 def validate_plan_dict(plan_data: Dict[str, Any]) -> Plan:
-    """Validate plan data and return typed plan."""
+    """Validate plan data and return typed plan.
+
+    Validation has two layers:
+    1. JSON Schema for structural and basic field constraints.
+    2. Python semantic checks for cross-field rules.
+    """
+    try:
+        schema_validator("plan").validate(plan_data)
+    except JsonSchemaValidationError as exc:
+        raise PlanValidationError(f"schema validation failed: {exc.message}") from exc
+
     _require_fields(
         plan_data,
         ("schema_version", "plan_id", "title", "created_at", "created_by", "tasks"),

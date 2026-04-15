@@ -106,3 +106,33 @@ class CLITests(unittest.TestCase):
             self.assertTrue((output_dir / "tasks" / "plan.md").exists())
             self.assertTrue((output_dir / "tasks" / "todo.md").exists())
 
+    def test_validate_plan_executes_json_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan_path = root / "invalid-plan.json"
+            payload = {
+                "schema_version": "1.0",
+                "plan_id": "plan-cli-invalid",
+                "title": "Invalid CLI Plan",
+                "created_at": "2026-04-15T10:00:00Z",
+                "created_by": "tester",
+                "tasks": [
+                    {
+                        "task_id": "T1",
+                        "title": "one",
+                        "execution": {"kind": "shell", "command": 7},
+                    }
+                ],
+            }
+            plan_path.write_text(json.dumps(payload), encoding="utf-8")
+            cmd_base = ["python3", "-m", "runtime.cli"]
+            validated = subprocess.run(
+                cmd_base + ["validate-plan", "--plan", str(plan_path)],
+                cwd="/workspace",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(validated.returncode, 0)
+            self.assertIn("invalid plan:", validated.stderr)
+

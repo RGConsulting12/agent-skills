@@ -25,6 +25,13 @@ def next_event_seq(run_state_metadata: Dict[str, Any]) -> int:
     return seq
 
 
+def sync_event_seq(run_state_metadata: Dict[str, Any], observed_seq: int) -> None:
+    """Advance in-memory sequence to at least the observed value."""
+    current = int(run_state_metadata.get("event_seq", 0))
+    if observed_seq > current:
+        run_state_metadata["event_seq"] = observed_seq
+
+
 def make_event(
     *,
     seq: int,
