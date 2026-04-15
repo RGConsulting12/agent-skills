@@ -93,3 +93,18 @@ class ValidatorTests(unittest.TestCase):
         with self.assertRaises(SchemaValidationError):
             validate_plan_dict(payload)
 
+    def test_plan_policy_extension_is_accepted(self) -> None:
+        payload = sample_plan()
+        payload["policy"] = {
+            "version": "1",
+            "paths": {
+                "allowlist": ["runtime/examples"],
+                "denylist": [],
+                "normalization": {"repo_relative_only": True, "case_sensitive": True},
+            },
+            "tools": {"allowlist": ["noop", "shell"]},
+            "approvals": {"required_categories": ["delegation_accept"]},
+        }
+        plan = validate_plan_dict(payload)
+        self.assertIsNotNone(plan.policy)
+

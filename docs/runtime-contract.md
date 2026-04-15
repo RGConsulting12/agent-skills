@@ -10,6 +10,17 @@ Scope:
 
 This is an implementation contract, not a roadmap.
 
+## Phase 2B additive notes
+
+Phase 2B adds:
+- schema-native optional policy (`plan.policy`, `delegation.policy_override`)
+- operation journal entries at `.agent-runtime/state/<run_id>/ops.jsonl`
+- deterministic/idempotent reconciliation and derived pending cache
+- additive CLI commands (`pending`, `reconcile`, `doctor`) and filters (`status --include-pending`, `delegate-status --pending-review`)
+- stronger delegation result manifest fields (manifest version, trace linkage, artifact/workspace details)
+
+Compatibility guarantees from earlier sections remain unchanged.
+
 ## 1) Supported plan/task execution kinds
 
 The runtime accepts `schema_version: "1.0"` plans and currently supports these task `execution.kind` values:

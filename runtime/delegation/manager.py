@@ -24,10 +24,7 @@ def build_review_result(
         status="submitted_for_review",
         summary="child completed",
         produced_artifact_ids=produced_artifact_ids,
-        output_manifest={
-            "child_run_id": child.child_run_id,
-            "artifact_count": len(produced_artifact_ids),
-        },
+        output_manifest={},
         evidence={"child_status": child.status, "last_error": child.last_error},
         submitted_at=now_iso(),
     )

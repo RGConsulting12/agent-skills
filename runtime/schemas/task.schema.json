@@ -141,6 +141,59 @@
             "review_required": {
               "type": "boolean",
               "const": true
+            },
+            "policy_override": {
+              "type": "object",
+              "properties": {
+                "paths": {
+                  "type": "object",
+                  "properties": {
+                    "allowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "denylist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "allowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "noop",
+                          "shell"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "approvals": {
+                  "type": "object",
+                  "properties": {
+                    "required_categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

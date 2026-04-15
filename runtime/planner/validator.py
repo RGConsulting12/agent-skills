@@ -99,6 +99,9 @@ def validate_plan_dict(plan_data: Dict[str, Any]) -> Plan:
     )
     if plan_data["schema_version"] != "1.0":
         raise PlanValidationError("schema_version must equal 1.0")
+    policy = plan_data.get("policy")
+    if policy is not None and not isinstance(policy, dict):
+        raise PlanValidationError("policy must be an object when provided")
     if not isinstance(plan_data["tasks"], list) or not plan_data["tasks"]:
         raise PlanValidationError("tasks must be a non-empty array")
 

@@ -20,6 +20,16 @@ class PolicyConfig:
     require_action_approval_for_delegation_accept: bool = True
 
 
+@dataclass
+class EffectivePolicy:
+    """Resolved policy contract used for delegation execution."""
+
+    path_allowlist: list[str]
+    path_denylist: list[str]
+    tool_allowlist: list[str]
+    required_categories: list[str]
+
+
 class PolicyEngine:
     """Enforces minimal allowlist/denylist and action approvals."""
 
@@ -124,4 +134,92 @@ class PolicyEngine:
         if category == "delegation_accept":
             return self.config.require_action_approval_for_delegation_accept
         return False
+
+    @staticmethod
+    def _normalize_rules(repo_root: Path, values: Iterable[str]) -> list[str]:
+        rules: list[str] = []
+        for item in values:
+            normalized = PolicyEngine._normalize_repo_relative(repo_root, item)
+            if normalized is not None:
+                rules.append(normalized)
+        return sorted(set(rules))
+
+    @staticmethod
+    def _intersect_rules(*lists: list[str]) -> list[str]:
+        present = [set(items) for items in lists if items]
+        if not present:
+            return []
+        shared = set.intersection(*present)
+        return sorted(shared)
+
+    @staticmethod
+    def _union_rules(*lists: list[str]) -> list[str]:
+        merged = set()
+        for items in lists:
+            merged.update(items)
+        return sorted(merged)
+
+    def resolve_effective_policy(
+        self,
+        *,
+        repo_root: Path,
+        plan_policy: dict | None,
+        delegation_config: dict,
+    ) -> EffectivePolicy:
+        """Resolve policy with narrowing-only overrides for delegation execution."""
+        plan_policy = plan_policy or {}
+        override = dict(delegation_config.get("policy_override", {}))
+
+        plan_paths = dict(plan_policy.get("paths", {}))
+        ov_paths = dict(override.get("paths", {}))
+        cfg_allow = list(delegation_config.get("path_allowlist", []))
+        cfg_deny = list(delegation_config.get("path_denylist", []))
+
+        base_allow = self._normalize_rules(repo_root, plan_paths.get("allowlist", []))
+        ov_allow = self._normalize_rules(repo_root, ov_paths.get("allowlist", []))
+        cfg_allow_n = self._normalize_rules(repo_root, cfg_allow)
+        allow = self._intersect_rules(base_allow, ov_allow, cfg_allow_n)
+        if (base_allow or ov_allow or cfg_allow_n) and not allow:
+            raise PolicyError("policy narrowing produced empty path allowlist")
+        if not allow and not (base_allow or ov_allow):
+            # Preserve current Phase 2A behavior where delegation path_allowlist
+            # alone constrains allowed paths.
+            allow = cfg_allow_n
+
+        base_deny = self._normalize_rules(repo_root, plan_paths.get("denylist", []))
+        ov_deny = self._normalize_rules(repo_root, ov_paths.get("denylist", []))
+        cfg_deny_n = self._normalize_rules(repo_root, cfg_deny)
+        deny = self._union_rules(base_deny, ov_deny, cfg_deny_n)
+
+        plan_tools = dict(plan_policy.get("tools", {}))
+        ov_tools = dict(override.get("tools", {}))
+        cfg_tools = sorted(set(str(item) for item in delegation_config.get("tool_allowlist", [])))
+        base_tools = sorted(set(str(item) for item in plan_tools.get("allowlist", [])))
+        ov_tools_list = sorted(set(str(item) for item in ov_tools.get("allowlist", [])))
+        tools = self._intersect_rules(base_tools, ov_tools_list, cfg_tools)
+        if (base_tools or ov_tools_list or cfg_tools) and not tools:
+            raise PolicyError("policy narrowing produced empty tool allowlist")
+        if not tools and not (base_tools or ov_tools_list):
+            # Preserve current Phase 2A behavior where delegation tool_allowlist
+            # alone defines allowed tools.
+            tools = cfg_tools
+
+        known_tools = {"noop", "shell"}
+        unknown = [item for item in tools if item not in known_tools]
+        if unknown:
+            raise PolicyError(f"unsupported tool(s) in effective policy: {', '.join(sorted(unknown))}")
+
+        plan_approvals = dict(plan_policy.get("approvals", {}))
+        ov_approvals = dict(override.get("approvals", {}))
+        categories = self._union_rules(
+            sorted(set(str(item) for item in plan_approvals.get("required_categories", []))),
+            sorted(set(str(item) for item in ov_approvals.get("required_categories", []))),
+        )
+
+        return EffectivePolicy(
+            path_allowlist=allow,
+            path_denylist=deny,
+            tool_allowlist=tools,
+            required_categories=categories,
+        )
 

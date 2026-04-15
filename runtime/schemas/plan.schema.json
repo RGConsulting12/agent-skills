@@ -42,6 +42,80 @@
         "$ref": "task.schema.json"
       }
     },
+    "policy": {
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "const": "1"
+        },
+        "paths": {
+          "type": "object",
+          "properties": {
+            "allowlist": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "denylist": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "normalization": {
+              "type": "object",
+              "properties": {
+                "repo_relative_only": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "case_sensitive": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "tools": {
+          "type": "object",
+          "properties": {
+            "allowlist": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "noop",
+                  "shell"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "approvals": {
+          "type": "object",
+          "properties": {
+            "required_categories": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "metadata": {
       "type": "object"
     }

@@ -284,6 +284,78 @@
     "summary": {
       "type": "object"
     },
+    "pending": {
+      "type": "object",
+      "properties": {
+        "derived_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task_approvals_pending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "delegation_reviews_pending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "action_approvals_pending": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "category",
+              "target_id"
+            ],
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "target_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "reconciliation": {
+      "type": "object",
+      "properties": {
+        "last_reconciled_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "algorithm_version": {
+          "type": "string"
+        },
+        "repairs_applied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "last_journal_offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
     "metadata": {
       "type": "object"
     }

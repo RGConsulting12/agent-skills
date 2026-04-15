@@ -129,6 +129,7 @@ class Plan:
     created_by: str
     tasks: List[TaskDefinition]
     metadata: Dict[str, Any] = field(default_factory=dict)
+    policy: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Plan":
@@ -141,6 +142,7 @@ class Plan:
             created_by=str(data["created_by"]),
             tasks=[TaskDefinition.from_dict(item) for item in data["tasks"]],
             metadata=dict(data.get("metadata", {})),
+            policy=dict(data.get("policy", {})) if data.get("policy") else None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -153,6 +155,7 @@ class Plan:
             "created_by": self.created_by,
             "tasks": [task.to_dict() for task in self.tasks],
             "metadata": self.metadata,
+            "policy": self.policy,
         }
 
 
@@ -542,6 +545,8 @@ class RunState:
     action_approvals: Dict[str, ActionApproval] = field(default_factory=dict)
     current_task_id: Optional[str] = None
     summary: Dict[str, Any] = field(default_factory=dict)
+    pending: Dict[str, Any] = field(default_factory=dict)
+    reconciliation: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -562,6 +567,8 @@ class RunState:
             },
             "current_task_id": self.current_task_id,
             "summary": self.summary,
+            "pending": self.pending,
+            "reconciliation": self.reconciliation,
             "metadata": self.metadata,
         }
 
@@ -598,8 +605,42 @@ class RunState:
             action_approvals=action_approvals,
             current_task_id=data.get("current_task_id"),
             summary=dict(data.get("summary", {})),
+            pending=dict(data.get("pending", {})),
+            reconciliation=dict(data.get("reconciliation", {})),
             metadata=dict(data.get("metadata", {})),
         )
+
+
+@dataclass
+class JournalEntry:
+    """Append-only operation journal entry."""
+
+    op_id: str
+    run_id: str
+    entity_kind: str
+    entity_id: str
+    operation: str
+    phase: str
+    state_before: Optional[Dict[str, Any]]
+    state_after: Optional[Dict[str, Any]]
+    reason_code: Optional[str] = None
+    trace: Dict[str, Any] = field(default_factory=dict)
+    ts: str = field(default_factory=now_iso)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "op_id": self.op_id,
+            "run_id": self.run_id,
+            "entity_kind": self.entity_kind,
+            "entity_id": self.entity_id,
+            "operation": self.operation,
+            "phase": self.phase,
+            "state_before": self.state_before,
+            "state_after": self.state_after,
+            "reason_code": self.reason_code,
+            "trace": self.trace,
+            "ts": self.ts,
+        }
 
 
 @dataclass

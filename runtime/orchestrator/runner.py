@@ -5,7 +5,15 @@ from __future__ import annotations
 from typing import Tuple
 
 from runtime.adapters.host_adapter import HostAdapter
-from runtime.models import ActionApproval, Plan, RunState, TaskApproval, TaskRuntimeState, now_iso
+from runtime.models import (
+    ActionApproval,
+    Plan,
+    RunState,
+    TaskApproval,
+    TaskRuntimeState,
+    now_iso,
+)
+from runtime.orchestrator.reconcile import reconcile_run_state
 from runtime.observability.logger import TraceLogger
 from runtime.observability.trace import make_event, new_trace_id, next_event_seq, next_span_id
 from runtime.policy.engine import PolicyEngine
@@ -32,6 +40,74 @@ class PlanRunner:
         self.adapter = adapter
         self.policy = PolicyEngine()
         self.delegation_service = DelegationService(store=self.store, policy=self.policy)
+
+    def _required_action_categories(self, run_state: RunState, delegation_id: str) -> list[str]:
+        metadata_map = dict(run_state.metadata.get("delegation_required_actions", {}))
+        categories = list(metadata_map.get(delegation_id, []))
+        if not categories and self.policy.config.require_action_approval_for_delegation_accept:
+            categories = ["delegation_accept"]
+        return sorted(set(categories))
+
+    def _sync_journal_offset(self, run_state: RunState) -> None:
+        """Keep reconciliation journal offset metadata in sync."""
+        reconciliation = dict(run_state.reconciliation)
+        reconciliation["last_journal_offset"] = len(self.store.read_journal(run_state.run_id))
+        run_state.reconciliation = reconciliation
+
+    @staticmethod
+    def _derive_pending(run_state: RunState) -> dict:
+        """Build pending cache from authoritative runtime state."""
+        task_approvals_pending = sorted(
+            task_id
+            for task_id, task in run_state.tasks.items()
+            if task.approval.required and not task.approval.approved
+        )
+        delegation_reviews_pending = sorted(
+            delegation_id
+            for delegation_id, record in run_state.delegations.items()
+            if record.status == "submitted_for_review"
+        )
+        required_actions = []
+        for delegation_id in delegation_reviews_pending:
+            metadata_map = dict(run_state.metadata.get("delegation_required_actions", {}))
+            categories = list(metadata_map.get(delegation_id, []))
+            if not categories:
+                categories = ["delegation_accept"]
+            for category in sorted(set(categories)):
+                key = f"{category}:{delegation_id}"
+                approval = run_state.action_approvals.get(key)
+                if not approval or not approval.approved:
+                    required_actions.append({"category": category, "target_id": delegation_id})
+        return {
+            "derived_at": now_iso(),
+            "task_approvals_pending": task_approvals_pending,
+            "delegation_reviews_pending": delegation_reviews_pending,
+            "action_approvals_pending": required_actions,
+        }
+
+    def _apply_reconciliation_meta(self, run_state: RunState, reconciliation_result: dict) -> None:
+        run_state.reconciliation = {
+            "last_reconciled_at": reconciliation_result.get("last_reconciled_at"),
+            "algorithm_version": reconciliation_result.get("algorithm_version", "2b-v1"),
+            "repairs_applied": int(reconciliation_result.get("repairs_applied", 0)),
+            "warnings": list(reconciliation_result.get("warnings", [])),
+            "last_journal_offset": int(reconciliation_result.get("last_journal_offset", 0)),
+        }
+
+    def reconcile(self, run_id: str) -> tuple[RunState, dict]:
+        """Reconcile run/delegation persistence into deterministic in-memory state."""
+        plan = self.load_plan(run_id)
+        run_state = RunState.from_dict(self.store.load_run_state(run_id))
+        run_state, result = reconcile_run_state(
+            plan=plan,
+            run_state=run_state,
+            store=self.store,
+        )
+        self._apply_reconciliation_meta(run_state, result)
+        run_state.pending = self._derive_pending(run_state)
+        run_state.summary = summarize_tasks(run_state)
+        self.store.save_run_state(run_id, run_state.to_dict())
+        return run_state, result
 
     def _emit_event(self, run_state: RunState, event_name: str, payload: dict | None = None) -> None:
         trace_id = run_state.metadata.setdefault("trace_id", new_trace_id())
@@ -84,14 +160,18 @@ class PlanRunner:
             child_runs={},
             action_approvals={},
             summary={},
+            pending={},
+            reconciliation={},
             metadata={"event_seq": 0, "span_counter": 0, "trace_id": new_trace_id()},
         )
         refresh_nonterminal_statuses(plan, run_state)
         run_state.summary = summarize_tasks(run_state)
+        run_state.pending = self._derive_pending(run_state)
         self.store.save_plan(run_id, plan.to_dict())
         self.store.save_artifacts(run_id, [])
         self._emit_event(run_state, "run_initialized", {"status": run_state.status})
         self.store.save_run_state(run_id, run_state.to_dict())
+        self._sync_journal_offset(run_state)
         return run_state
 
     def load_plan(self, run_id: str) -> Plan:
@@ -100,7 +180,18 @@ class PlanRunner:
 
     def load_run_state(self, run_id: str) -> RunState:
         """Load run state."""
-        return RunState.from_dict(self.store.load_run_state(run_id))
+        run_state = RunState.from_dict(self.store.load_run_state(run_id))
+        plan = self.load_plan(run_id)
+        run_state, reconciliation_result = reconcile_run_state(
+            plan=plan,
+            run_state=run_state,
+            store=self.store,
+        )
+        self._apply_reconciliation_meta(run_state, reconciliation_result)
+        run_state.pending = self._derive_pending(run_state)
+        self.store.save_run_state(run_id, run_state.to_dict())
+        self._sync_journal_offset(run_state)
+        return run_state
 
     def approve_task(self, run_id: str, task_id: str, approved_by: str) -> RunState:
         """Approve a task-level gate."""
@@ -127,8 +218,10 @@ class PlanRunner:
         task_state.approval.approved_at = now_iso()
         refresh_nonterminal_statuses(plan, run_state)
         run_state.summary = summarize_tasks(run_state)
+        run_state.pending = self._derive_pending(run_state)
         self._emit_event(run_state, "task_approved", {"task_id": task_id, "approved_by": approved_by})
         self.store.save_run_state(run_id, run_state.to_dict())
+        self._sync_journal_offset(run_state)
         return run_state
 
     def approve_action(self, run_id: str, category: str, target_id: str, approved_by: str) -> RunState:
@@ -156,7 +249,9 @@ class PlanRunner:
             "action_approval_recorded",
             {"category": category, "target_id": target_id, "approved_by": approved_by},
         )
+        run_state.pending = self._derive_pending(run_state)
         self.store.save_run_state(run_id, run_state.to_dict())
+        self._sync_journal_offset(run_state)
         return run_state
 
     def _is_action_approved(self, run_state: RunState, *, category: str, target_id: str) -> bool:
@@ -185,12 +280,20 @@ class PlanRunner:
         if parent_task.status != "waiting_review":
             raise ValueError(f"parent task '{record.parent_task_id}' is not in waiting_review")
         if decision == "accepted" and self.policy.config.require_action_approval_for_delegation_accept:
-            if not self._is_action_approved(
-                run_state,
-                category="delegation_accept",
-                target_id=delegation_id,
-            ):
-                raise ValueError("delegation_accept action approval required before acceptance")
+            required = list(
+                dict(run_state.metadata.get("delegation_required_actions", {})).get(
+                    delegation_id, ["delegation_accept"]
+                )
+            )
+            for category in required:
+                if not self._is_action_approved(
+                    run_state,
+                    category=category,
+                    target_id=delegation_id,
+                ):
+                    if category == "delegation_accept":
+                        raise ValueError("delegation_accept action approval required before acceptance")
+                    raise ValueError(f"{category} action approval required before acceptance")
         record = self.delegation_service.apply_review_decision(
             run_state=run_state,
             delegation=record,
@@ -204,6 +307,7 @@ class PlanRunner:
         previous_status = run_state.status
         self._update_run_status(plan, run_state, previous_status)
         run_state.summary = summarize_tasks(run_state)
+        run_state.pending = self._derive_pending(run_state)
         self._emit_event(
             run_state,
             f"delegation_review_{decision}",
@@ -215,6 +319,7 @@ class PlanRunner:
             },
         )
         self.store.save_run_state(run_id, run_state.to_dict())
+        self._sync_journal_offset(run_state)
         return run_state
 
     def _update_run_status(self, plan: Plan, run_state: RunState, previous_status: str) -> None:
@@ -263,6 +368,7 @@ class PlanRunner:
                 )
             self._update_run_status(plan, run_state, previous_status)
             run_state.summary = summarize_tasks(run_state)
+            run_state.pending = self._derive_pending(run_state)
             self.store.save_run_state(run_id, run_state.to_dict())
             return run_state, False
 
@@ -361,6 +467,7 @@ class PlanRunner:
         refresh_nonterminal_statuses(plan, run_state)
         self._update_run_status(plan, run_state, previous_status)
         run_state.summary = summarize_tasks(run_state)
+        run_state.pending = self._derive_pending(run_state)
         self.store.save_run_state(run_id, run_state.to_dict())
         return run_state, True
 

@@ -84,6 +84,42 @@ class CLITests(unittest.TestCase):
             data = json.loads(ran.stdout)
             self.assertEqual(data["status"], "completed")
 
+            pending = subprocess.run(
+                cmd_base
+                + [
+                    "pending",
+                    "--run-id",
+                    "run-cli",
+                    "--state-dir",
+                    str(state_dir),
+                    "--json",
+                ],
+                cwd="/workspace",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(pending.returncode, 0, pending.stderr)
+
+            reconcile = subprocess.run(
+                cmd_base
+                + [
+                    "reconcile",
+                    "--run-id",
+                    "run-cli",
+                    "--state-dir",
+                    str(state_dir),
+                    "--logs-dir",
+                    str(logs_dir),
+                    "--json",
+                ],
+                cwd="/workspace",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(reconcile.returncode, 0, reconcile.stderr)
+
             rendered = subprocess.run(
                 cmd_base
                 + [

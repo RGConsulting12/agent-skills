@@ -71,7 +71,22 @@ Generated files:
 ```bash
 python3 -m unittest discover -s tests/runtime_phase1 -v
 python3 -m unittest discover -s tests/runtime_phase2a -v
+python3 -m unittest discover -s tests/runtime_phase2b -v
 ```
+
+## Phase 2B additions (additive)
+
+- schema-native optional policy contract (`plan.policy`, `delegation.policy_override`) with narrowing-only resolution
+- operation journal at `.agent-runtime/state/<run_id>/ops.jsonl` with `intent`/`applied`/`repair` phases
+- deterministic, idempotent reconciliation on load plus explicit CLI reconciliation
+- derived pending cache in run state (`pending`) for approvals/reviews visibility
+- stronger delegation result manifest v1 (`manifest_version`, trace linkage, artifact/workspace metadata)
+- additive CLI commands:
+  - `pending`
+  - `reconcile`
+  - `doctor` (`--apply` to run reconciliation, otherwise dry-run)
+  - `delegate-status --pending-review`
+  - `status --include-pending`
 
 ## Phase 2A notes
 

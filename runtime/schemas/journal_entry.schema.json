@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "journal_entry.schema.json",
+  "title": "Phase2BJournalEntry",
+  "type": "object",
+  "required": [
+    "op_id",
+    "run_id",
+    "entity_kind",
+    "entity_id",
+    "operation",
+    "phase",
+    "state_before",
+    "state_after",
+    "ts"
+  ],
+  "properties": {
+    "op_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entity_kind": {
+      "type": "string",
+      "enum": [
+        "run",
+        "task",
+        "delegation"
+      ]
+    },
+    "entity_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "delegation_create",
+        "delegation_transition",
+        "delegation_review",
+        "run_status_transition",
+        "task_status_transition",
+        "reconciliation_repair"
+      ]
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "intent",
+        "applied",
+        "repair"
+      ]
+    },
+    "state_before": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "state_after": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "reason_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trace": {
+      "type": "object",
+      "properties": {
+        "trace_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "seq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

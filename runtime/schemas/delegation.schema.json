@@ -154,7 +154,95 @@
           }
         },
         "output_manifest": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "manifest_version": {
+              "type": "string",
+              "const": "1"
+            },
+            "child_run_id": {
+              "type": "string"
+            },
+            "trace": {
+              "type": "object",
+              "properties": {
+                "trace_id": {
+                  "type": "string"
+                },
+                "first_seq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "last_seq": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "artifacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "artifact_id",
+                  "type",
+                  "status"
+                ],
+                "properties": {
+                  "artifact_id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "final"
+                    ]
+                  },
+                  "path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "sha256": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "size_bytes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "workspace": {
+              "type": "object",
+              "properties": {
+                "root": {
+                  "type": "string"
+                },
+                "input": {
+                  "type": "string"
+                },
+                "output": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": true
         },
         "evidence": {
           "type": "object"

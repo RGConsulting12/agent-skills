@@ -5,12 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import List
 
-from runtime.models import (
-    DelegationRecord,
-    DelegationRequest,
-    DelegationReview,
-    now_iso,
-)
+from runtime.models import DelegationRecord, DelegationRequest, DelegationReview, now_iso
 
 
 def new_delegation_id() -> str:
@@ -22,6 +17,11 @@ def new_child_run_id(parent_run_id: str, delegation_id: str) -> str:
     """Generate child run id tied to parent/delegation identifiers."""
     suffix = delegation_id.replace("dlg-", "")
     return f"{parent_run_id}--child-{suffix}"
+
+
+def new_operation_id() -> str:
+    """Generate operation id for journaled state transitions."""
+    return f"op-{uuid.uuid4().hex[:12]}"
 
 
 def build_delegation_request(

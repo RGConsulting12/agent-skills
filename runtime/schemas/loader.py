@@ -27,6 +27,7 @@ class SchemaRegistry:
             "artifact": self._load("artifact.schema.json"),
             "run_state": self._load("run_state.schema.json"),
             "delegation": self._load("delegation.schema.json"),
+            "journal_entry": self._load("journal_entry.schema.json"),
         }
         resolver = RefResolver(base_uri=self.schema_dir.as_uri() + "/", referrer=self._schemas["run_state"])
         self._validators = {
@@ -35,6 +36,7 @@ class SchemaRegistry:
             "artifact": Draft202012Validator(self._schemas["artifact"]),
             "run_state": Draft202012Validator(self._schemas["run_state"], resolver=resolver),
             "delegation": Draft202012Validator(self._schemas["delegation"]),
+            "journal_entry": Draft202012Validator(self._schemas["journal_entry"]),
         }
 
     def _load(self, filename: str) -> Dict[str, Any]:
@@ -90,4 +92,9 @@ def validate_delegation(payload: Any) -> None:
 def validate_task(payload: Any) -> None:
     """Validate task payload against task schema."""
     _REGISTRY.validate("task", payload)
+
+
+def validate_journal_entry(payload: Any) -> None:
+    """Validate journal entry payload against journal entry schema."""
+    _REGISTRY.validate("journal_entry", payload)
 

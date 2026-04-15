@@ -7,7 +7,9 @@ import json
 import sys
 
 from runtime.adapters.generic_adapter import GenericAdapter
+from runtime.models import RunState
 from runtime.observability.logger import TraceLogger
+from runtime.orchestrator.reconcile import reconcile_run_state
 from runtime.orchestrator.runner import PlanRunner
 from runtime.planner.validator import PlanValidationError, load_and_validate_plan
 from runtime.workspace.markdown_sync import render_plan_markdown, render_todo_markdown
@@ -85,14 +87,32 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     run_state = store.load_run_state(args.run_id)
+    pending = run_state.get("pending", {})
     if args.json:
-        print(json.dumps(run_state, indent=2, sort_keys=True))
+        payload = dict(run_state)
+        if not args.include_pending:
+            payload.pop("pending", None)
+        print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(f"run_id: {run_state['run_id']}")
         print(f"status: {run_state['status']}")
         print("summary:")
         for key, value in sorted(run_state.get("summary", {}).items()):
             print(f"  {key}: {value}")
+        if args.include_pending:
+            print("pending (derived cache):")
+            print(
+                f"  task_approvals_pending: {', '.join(pending.get('task_approvals_pending', [])) or 'none'}"
+            )
+            print(
+                f"  delegation_reviews_pending: {', '.join(pending.get('delegation_reviews_pending', [])) or 'none'}"
+            )
+            action_rows = pending.get("action_approvals_pending", [])
+            if action_rows:
+                items = ", ".join(f"{row['category']}:{row['target_id']}" for row in action_rows)
+            else:
+                items = "none"
+            print(f"  action_approvals_pending: {items}")
     return 0
 
 
@@ -111,6 +131,10 @@ def cmd_delegate_status(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     run_state = store.load_run_state(args.run_id)
     delegations = run_state.get("delegations", {})
+    if args.pending_review:
+        delegations = {
+            key: value for key, value in delegations.items() if value.get("status") == "submitted_for_review"
+        }
     if args.task_id:
         delegations = {
             key: value for key, value in delegations.items() if value.get("parent_task_id") == args.task_id
@@ -174,6 +198,81 @@ def cmd_trace(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pending(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    run_state = store.load_run_state(args.run_id)
+    pending = dict(run_state.get("pending", {}))
+    if args.json:
+        print(json.dumps(pending, indent=2, sort_keys=True))
+    else:
+        print(
+            f"task_approvals_pending: {', '.join(pending.get('task_approvals_pending', [])) or 'none'}"
+        )
+        print(
+            f"delegation_reviews_pending: {', '.join(pending.get('delegation_reviews_pending', [])) or 'none'}"
+        )
+        action_rows = pending.get("action_approvals_pending", [])
+        if action_rows:
+            lines = ", ".join(f"{row['category']}:{row['target_id']}" for row in action_rows)
+        else:
+            lines = "none"
+        print(f"action_approvals_pending: {lines}")
+    return 0
+
+
+def cmd_reconcile(args: argparse.Namespace) -> int:
+    runner = _build_runner(args)
+    run_state, result = runner.reconcile(args.run_id)
+    payload = {
+        "run_id": run_state.run_id,
+        "status": run_state.status,
+        "repairs_applied": int(result.get("repairs_applied", 0)),
+        "warnings": list(result.get("warnings", [])),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(
+            "reconciled run "
+            f"{run_state.run_id}: repairs={int(result.get('repairs_applied', 0))}, "
+            f"warnings={len(result.get('warnings', []))}"
+        )
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    runner = _build_runner(args)
+    if args.apply:
+        run_state, result = runner.reconcile(args.run_id)
+        payload = {
+            "run_id": run_state.run_id,
+            "applied": True,
+            "repairs_applied": int(result.get("repairs_applied", 0)),
+            "warnings": list(result.get("warnings", [])),
+            "pending": run_state.pending,
+        }
+    else:
+        plan = runner.load_plan(args.run_id)
+        run_state = RunState.from_dict(runner.store.load_run_state(args.run_id))
+        _, result = reconcile_run_state(plan=plan, run_state=run_state, store=runner.store)
+        payload = {
+            "run_id": run_state.run_id,
+            "applied": False,
+            "repairs_needed": int(result.get("repairs_applied", 0)),
+            "warnings": list(result.get("warnings", [])),
+            "pending": runner._derive_pending(run_state),
+        }
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        mode = "apply" if payload["applied"] else "dry-run"
+        print(f"doctor ({mode}) run={payload['run_id']}")
+        print(
+            f"repairs: {payload.get('repairs_applied', payload.get('repairs_needed', 0))}, warnings: {len(payload['warnings'])}"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Runtime CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -218,6 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--run-id", required=True)
     status.add_argument("--state-dir", default=".agent-runtime/state")
     status.add_argument("--json", action="store_true")
+    status.add_argument("--include-pending", action="store_true")
     status.set_defaults(func=cmd_status)
 
     render = subparsers.add_parser("render-markdown", help="Generate markdown from typed state")
@@ -237,6 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
     delegate_status = subparsers.add_parser("delegate-status", help="Show delegation status")
     delegate_status.add_argument("--run-id", required=True)
     delegate_status.add_argument("--task-id")
+    delegate_status.add_argument("--pending-review", action="store_true")
     delegate_status.add_argument("--state-dir", default=".agent-runtime/state")
     delegate_status.add_argument("--json", action="store_true")
     delegate_status.set_defaults(func=cmd_delegate_status)
@@ -261,6 +362,29 @@ def build_parser() -> argparse.ArgumentParser:
     approve_action.add_argument("--state-dir", default=".agent-runtime/state")
     approve_action.add_argument("--logs-dir", default=".agent-runtime/logs")
     approve_action.set_defaults(func=cmd_approve_action)
+
+    pending = subparsers.add_parser("pending", help="Show derived pending approvals and reviews")
+    pending.add_argument("--run-id", required=True)
+    pending.add_argument("--state-dir", default=".agent-runtime/state")
+    pending.add_argument("--json", action="store_true")
+    pending.set_defaults(func=cmd_pending)
+
+    reconcile = subparsers.add_parser("reconcile", help="Reconcile persisted run/delegation state")
+    reconcile.add_argument("--run-id", required=True)
+    reconcile.add_argument("--adapter", default="generic")
+    reconcile.add_argument("--state-dir", default=".agent-runtime/state")
+    reconcile.add_argument("--logs-dir", default=".agent-runtime/logs")
+    reconcile.add_argument("--json", action="store_true")
+    reconcile.set_defaults(func=cmd_reconcile)
+
+    doctor = subparsers.add_parser("doctor", help="Runtime diagnostics and reconciliation preview")
+    doctor.add_argument("--run-id", required=True)
+    doctor.add_argument("--adapter", default="generic")
+    doctor.add_argument("--state-dir", default=".agent-runtime/state")
+    doctor.add_argument("--logs-dir", default=".agent-runtime/logs")
+    doctor.add_argument("--apply", action="store_true")
+    doctor.add_argument("--json", action="store_true")
+    doctor.set_defaults(func=cmd_doctor)
 
     return parser
 

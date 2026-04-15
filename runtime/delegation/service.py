@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Dict, List, Tuple
 
-from runtime.delegation.contracts import build_delegation_record, build_delegation_request
+from runtime.delegation.contracts import build_delegation_record, build_delegation_request, new_operation_id
 from runtime.delegation.manager import build_review_result, run_child_inline
 from runtime.delegation.workspace import DelegationWorkspace
 from runtime.delegation.review import apply_review
@@ -30,6 +30,72 @@ class DelegationService:
         self.policy = policy
         self.workspace = workspace or DelegationWorkspace()
         self.repo_root = repo_root
+
+    def _journal_transition(
+        self,
+        *,
+        run_state: RunState,
+        delegation: DelegationRecord,
+        operation: str,
+        phase: str,
+        state_before: Dict[str, object] | None,
+        state_after: Dict[str, object] | None,
+        reason_code: str | None = None,
+    ) -> None:
+        self.store.append_journal_entry(
+            run_state.run_id,
+            {
+                "op_id": new_operation_id(),
+                "run_id": run_state.run_id,
+                "entity_kind": "delegation",
+                "entity_id": delegation.delegation_id,
+                "operation": operation,
+                "phase": phase,
+                "state_before": state_before,
+                "state_after": state_after,
+                "reason_code": reason_code,
+                "trace": {"trace_id": run_state.metadata.get("trace_id"), "seq": None},
+                "ts": now_iso(),
+            },
+        )
+
+    def _build_manifest_v1(
+        self,
+        *,
+        run_state: RunState,
+        delegation: DelegationRecord,
+        produced_artifacts: List[Dict[str, object]],
+    ) -> Dict[str, object]:
+        trace_id = str(run_state.metadata.get("trace_id", ""))
+        seq = int(run_state.metadata.get("event_seq", 0))
+        artifact_rows: List[Dict[str, object]] = []
+        for artifact in produced_artifacts:
+            content = artifact.get("content")
+            artifact_rows.append(
+                {
+                    "artifact_id": artifact.get("artifact_id"),
+                    "type": artifact.get("type"),
+                    "status": artifact.get("status"),
+                    "path": artifact.get("path"),
+                    "sha256": None,
+                    "size_bytes": len(str(content)) if content is not None else 0,
+                }
+            )
+        return {
+            "manifest_version": "1",
+            "child_run_id": delegation.child_run_id,
+            "trace": {
+                "trace_id": trace_id,
+                "first_seq": seq if seq > 0 else 1,
+                "last_seq": seq if seq > 0 else 1,
+            },
+            "artifacts": artifact_rows,
+            "workspace": {
+                "root": delegation.workspace_dir,
+                "input": f"{delegation.workspace_dir}/input" if delegation.workspace_dir else "",
+                "output": f"{delegation.workspace_dir}/output" if delegation.workspace_dir else "",
+            },
+        }
 
     def start_delegation(
         self,
@@ -66,6 +132,14 @@ class DelegationService:
             timeout_seconds=int(cfg["timeout_seconds"]),
             expected_artifact_types=list(cfg["expected_artifact_types"]),
         )
+        effective_policy = self.policy.resolve_effective_policy(
+            repo_root=self.repo_root_path,
+            plan_policy=plan.policy,
+            delegation_config=cfg,
+        )
+        request.tool_allowlist = list(effective_policy.tool_allowlist)
+        request.path_allowlist = list(effective_policy.path_allowlist)
+        request.path_denylist = list(effective_policy.path_denylist)
 
         record = build_delegation_record(
             parent_run_id=run_state.run_id,
@@ -80,6 +154,13 @@ class DelegationService:
         task_state.active_delegation_id = record.delegation_id
         task_state.delegation_ids.append(record.delegation_id)
         task_state.status = "delegating"
+        required_actions = list(effective_policy.required_categories)
+        if self.policy.config.require_action_approval_for_delegation_accept:
+            if "delegation_accept" not in required_actions:
+                required_actions.append("delegation_accept")
+        action_map = dict(run_state.metadata.get("delegation_required_actions", {}))
+        action_map[record.delegation_id] = sorted(set(required_actions))
+        run_state.metadata["delegation_required_actions"] = action_map
 
         trace_emitter(
             "delegation_created",
@@ -91,7 +172,23 @@ class DelegationService:
             },
         )
         run_state.delegations[record.delegation_id] = record
+        self._journal_transition(
+            run_state=run_state,
+            delegation=record,
+            operation="delegation_create",
+            phase="intent",
+            state_before=None,
+            state_after=record.to_dict(),
+        )
         self.store.save_delegation(run_state.run_id, record.to_dict())
+        self._journal_transition(
+            run_state=run_state,
+            delegation=record,
+            operation="delegation_create",
+            phase="applied",
+            state_before=None,
+            state_after=record.to_dict(),
+        )
 
         try:
             self.policy.enforce_tool_allowlist(request.tool_allowlist, "noop")
@@ -113,8 +210,27 @@ class DelegationService:
                 },
             )
             record.workspace_dir = ws["root"]
+            before_running = record.to_dict()
             record.status = "running"
             record.updated_at = now_iso()
+            run_state.delegations[record.delegation_id] = record
+            self._journal_transition(
+                run_state=run_state,
+                delegation=record,
+                operation="delegation_transition",
+                phase="intent",
+                state_before=before_running,
+                state_after=record.to_dict(),
+            )
+            self.store.save_delegation(run_state.run_id, record.to_dict())
+            self._journal_transition(
+                run_state=run_state,
+                delegation=record,
+                operation="delegation_transition",
+                phase="applied",
+                state_before=before_running,
+                state_after=record.to_dict(),
+            )
             trace_emitter(
                 "delegation_workspace_prepared",
                 {
@@ -123,18 +239,41 @@ class DelegationService:
                 },
             )
         except (PolicyError, ValueError) as exc:
+            before_failed = record.to_dict()
             record.status = "failed"
             record.result = DelegationResult(
                 status="failed",
                 summary=str(exc),
                 produced_artifact_ids=[],
-                output_manifest={},
+                output_manifest=self._build_manifest_v1(
+                    run_state=run_state,
+                    delegation=record,
+                    produced_artifacts=[],
+                ),
                 evidence={"error_code": "DELEGATION_POLICY_DENIED"},
                 submitted_at=now_iso(),
             )
             record.updated_at = now_iso()
             run_state.delegations[record.delegation_id] = record
+            self._journal_transition(
+                run_state=run_state,
+                delegation=record,
+                operation="delegation_transition",
+                phase="intent",
+                state_before=before_failed,
+                state_after=record.to_dict(),
+                reason_code="DELEGATION_POLICY_DENIED",
+            )
             self.store.save_delegation(run_state.run_id, record.to_dict())
+            self._journal_transition(
+                run_state=run_state,
+                delegation=record,
+                operation="delegation_transition",
+                phase="applied",
+                state_before=before_failed,
+                state_after=record.to_dict(),
+                reason_code="DELEGATION_POLICY_DENIED",
+            )
             task_state.status = "ready"
             task_state.active_delegation_id = None
             task_state.last_error = {
@@ -213,15 +352,37 @@ class DelegationService:
             child=child_run,
             produced_artifact_ids=record.artifacts_copied_back,
         )
+        record.result.output_manifest = self._build_manifest_v1(
+            run_state=run_state,
+            delegation=record,
+            produced_artifacts=[item.to_dict() for item in created_artifacts],
+        )
+        before_submitted = record.to_dict()
         record.status = "submitted_for_review"
         record.updated_at = now_iso()
         run_state.delegations[record.delegation_id] = record
         task_state.status = "waiting_review"
+        self._journal_transition(
+            run_state=run_state,
+            delegation=record,
+            operation="delegation_transition",
+            phase="intent",
+            state_before=before_submitted,
+            state_after=record.to_dict(),
+        )
         trace_emitter(
             "delegation_submitted_for_review",
             {"delegation_id": record.delegation_id, "task_id": task.task_id},
         )
         self.store.save_delegation(run_state.run_id, record.to_dict())
+        self._journal_transition(
+            run_state=run_state,
+            delegation=record,
+            operation="delegation_transition",
+            phase="applied",
+            state_before=before_submitted,
+            state_after=record.to_dict(),
+        )
         return run_state, True
 
     @property
@@ -243,6 +404,15 @@ class DelegationService:
         Phase 2A acceptance finalizes delegation-produced draft artifacts only.
         No patch application is performed.
         """
+        before_review = delegation.to_dict()
+        self._journal_transition(
+            run_state=run_state,
+            delegation=delegation,
+            operation="delegation_review",
+            phase="intent",
+            state_before=before_review,
+            state_after=None,
+        )
         apply_review(delegation, decision=decision, reviewed_by=reviewed_by, notes=notes)
         if decision == "accepted":
             artifacts = self.store.load_artifacts(run_state.run_id)
@@ -276,6 +446,14 @@ class DelegationService:
             parent_task_state.active_delegation_id = None
         delegation.updated_at = now_iso()
         self.store.save_delegation(run_state.run_id, delegation.to_dict())
+        self._journal_transition(
+            run_state=run_state,
+            delegation=delegation,
+            operation="delegation_review",
+            phase="applied",
+            state_before=before_review,
+            state_after=delegation.to_dict(),
+        )
         return delegation
 
     def _apply_delegation_failure(
@@ -289,20 +467,44 @@ class DelegationService:
         error_message: str,
         trace_emitter: Callable[[str, Dict[str, object] | None], None],
     ) -> None:
+        before_failed = record.to_dict()
         record.status = "failed"
         record.result = DelegationResult(
             status="failed",
             summary=error_message,
             produced_artifact_ids=list(record.artifacts_copied_back),
-            output_manifest={},
+            output_manifest=self._build_manifest_v1(
+                run_state=run_state,
+                delegation=record,
+                produced_artifacts=[],
+            ),
             evidence={"error_code": error_code},
             submitted_at=now_iso(),
         )
         record.updated_at = now_iso()
         run_state.delegations[record.delegation_id] = record
+        self._journal_transition(
+            run_state=run_state,
+            delegation=record,
+            operation="delegation_transition",
+            phase="intent",
+            state_before=before_failed,
+            state_after=record.to_dict(),
+            reason_code=error_code,
+        )
         self.store.save_delegation(run_state.run_id, record.to_dict())
+        self._journal_transition(
+            run_state=run_state,
+            delegation=record,
+            operation="delegation_transition",
+            phase="applied",
+            state_before=before_failed,
+            state_after=record.to_dict(),
+            reason_code=error_code,
+        )
         exhausted = task_state.delegation_attempts >= task_state.max_delegation_attempts
         if exhausted:
+            before_exhausted = record.to_dict()
             record.status = "exhausted"
             record.updated_at = now_iso()
             run_state.delegations[record.delegation_id] = record
@@ -313,6 +515,15 @@ class DelegationService:
                 "detail": {"attempts": task_state.delegation_attempts},
             }
             self.store.save_delegation(run_state.run_id, record.to_dict())
+            self._journal_transition(
+                run_state=run_state,
+                delegation=record,
+                operation="delegation_transition",
+                phase="repair",
+                state_before=before_exhausted,
+                state_after=record.to_dict(),
+                reason_code=f"{error_code}_EXHAUSTED",
+            )
             trace_emitter(
                 "delegation_failed",
                 {

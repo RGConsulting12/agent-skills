@@ -35,6 +35,8 @@ def valid_run_state() -> dict:
         "artifacts": [],
         "current_task_id": None,
         "summary": {},
+        "pending": {},
+        "reconciliation": {},
         "metadata": {},
     }
 
