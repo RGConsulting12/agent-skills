@@ -28,9 +28,9 @@ def base_plan() -> dict:
                     "kind": "delegate",
                     "delegation": {
                         "objective": "produce delegated report",
-                        "copy_in_paths": ["/workspace/runtime/examples/sample-plan.json"],
+                        "copy_in_paths": ["runtime/examples/sample-plan.json"],
                         "tool_allowlist": ["noop"],
-                        "path_allowlist": ["/workspace/runtime/examples"],
+                        "path_allowlist": ["runtime/examples"],
                         "path_denylist": [],
                         "max_steps": 2,
                         "timeout_seconds": 60,
@@ -73,13 +73,23 @@ class WorkspacePolicyTests(unittest.TestCase):
         run_state, _ = self.runner.step("run-appr")
         delegation_id = run_state.tasks["T1"].active_delegation_id
         with self.assertRaises(ValueError):
-            self.runner.review_delegation("run-appr", delegation_id, "accepted", "reviewer")
+            self.runner.review_delegation(
+                "run-appr",
+                delegation_id,
+                decision="accepted",
+                reviewed_by="reviewer",
+            )
         self.runner.approve_action(
             "run-appr",
             category="delegation_accept",
             target_id=delegation_id,
             approved_by="security",
         )
-        self.runner.review_delegation("run-appr", delegation_id, "accepted", "reviewer")
+        self.runner.review_delegation(
+            "run-appr",
+            delegation_id,
+            decision="accepted",
+            reviewed_by="reviewer",
+        )
         run_state = self.runner.load_run_state("run-appr")
         self.assertEqual(run_state.tasks["T1"].status, "completed")

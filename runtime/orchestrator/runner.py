@@ -2,26 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 from runtime.adapters.host_adapter import HostAdapter
-from runtime.delegation.manager import DelegationManager
-from runtime.delegation.review import apply_review_decision
-from runtime.models import (
-    ActionApproval,
-    DelegationRecord,
-    DelegationRequest,
-    Plan,
-    RunState,
-    TaskApproval,
-    TaskRuntimeState,
-    now_iso,
-)
+from runtime.models import ActionApproval, Plan, RunState, TaskApproval, TaskRuntimeState, now_iso
 from runtime.observability.logger import TraceLogger
 from runtime.observability.trace import make_event, new_trace_id, next_event_seq, next_span_id
-from runtime.policy.engine import PolicyActionError, PolicyEngine
+from runtime.policy.engine import PolicyEngine
 from runtime.orchestrator.failure import failure_from_exception, failure_from_result
 from runtime.orchestrator.retry import backoff_seconds, should_retry
 from runtime.planner.dependency_graph import has_live_nonterminal_tasks, select_next_task
@@ -33,6 +20,7 @@ from runtime.workspace.transitions import (
     summarize_tasks,
     transition_task,
 )
+from runtime.delegation.service import DelegationService
 
 
 class PlanRunner:
@@ -43,17 +31,7 @@ class PlanRunner:
         self.logger = logger
         self.adapter = adapter
         self.policy = PolicyEngine()
-        self.delegation_manager = DelegationManager()
-
-
-@dataclass
-class DelegationOutcome:
-    """Outcome of inline child-run execution for delegation."""
-
-    success: bool
-    error_code: str | None = None
-    error_message: str | None = None
-    missing_outputs: List[str] | None = None
+        self.delegation_service = DelegationService(store=self.store, policy=self.policy)
 
     def _emit_event(self, run_state: RunState, event_name: str, payload: dict | None = None) -> None:
         trace_id = run_state.metadata.setdefault("trace_id", new_trace_id())
@@ -85,6 +63,12 @@ class DelegationOutcome:
                 approval=TaskApproval(required=task.approval_required),
                 depends_on=list(task.depends_on),
                 produced_artifacts=[],
+                delegation_attempts=0,
+                max_delegation_attempts=int(
+                    (task.execution.delegation or {}).get("max_delegation_attempts", 0)
+                ),
+                delegation_ids=[],
+                active_delegation_id=None,
             )
         run_state = RunState(
             schema_version="1.0",
@@ -96,6 +80,9 @@ class DelegationOutcome:
             ended_at=None,
             tasks=task_states,
             artifacts=[],
+            delegations={},
+            child_runs={},
+            action_approvals={},
             summary={},
             metadata={"event_seq": 0, "span_counter": 0, "trace_id": new_trace_id()},
         )
@@ -144,15 +131,103 @@ class DelegationOutcome:
         self.store.save_run_state(run_id, run_state.to_dict())
         return run_state
 
+    def approve_action(self, run_id: str, category: str, target_id: str, approved_by: str) -> RunState:
+        """Record a policy/action approval separate from task approvals."""
+        run_state = self.load_run_state(run_id)
+        key = f"{category}:{target_id}"
+        existing = run_state.action_approvals.get(key)
+        if existing and existing.approved:
+            self._emit_event(
+                run_state,
+                "action_approval_idempotent",
+                {"category": category, "target_id": target_id, "approved_by": existing.approved_by},
+            )
+            self.store.save_run_state(run_id, run_state.to_dict())
+            return run_state
+        run_state.action_approvals[key] = ActionApproval(
+            category=category,
+            target_id=target_id,
+            approved=True,
+            approved_by=approved_by,
+            approved_at=now_iso(),
+        )
+        self._emit_event(
+            run_state,
+            "action_approval_recorded",
+            {"category": category, "target_id": target_id, "approved_by": approved_by},
+        )
+        self.store.save_run_state(run_id, run_state.to_dict())
+        return run_state
+
+    def _is_action_approved(self, run_state: RunState, *, category: str, target_id: str) -> bool:
+        key = f"{category}:{target_id}"
+        approval = run_state.action_approvals.get(key)
+        return bool(approval and approval.approved)
+
+    def review_delegation(
+        self,
+        run_id: str,
+        delegation_id: str,
+        *,
+        decision: str,
+        reviewed_by: str,
+        notes: str | None = None,
+    ) -> RunState:
+        """Apply accepted/rejected review outcome for a submitted delegation."""
+        plan = self.load_plan(run_id)
+        run_state = self.load_run_state(run_id)
+        record = run_state.delegations.get(delegation_id)
+        if record is None:
+            raise ValueError(f"unknown delegation_id '{delegation_id}'")
+        if record.status != "submitted_for_review":
+            raise ValueError(f"delegation '{delegation_id}' is not reviewable")
+        parent_task = run_state.tasks[record.parent_task_id]
+        if parent_task.status != "waiting_review":
+            raise ValueError(f"parent task '{record.parent_task_id}' is not in waiting_review")
+        if decision == "accepted" and self.policy.config.require_action_approval_for_delegation_accept:
+            if not self._is_action_approved(
+                run_state,
+                category="delegation_accept",
+                target_id=delegation_id,
+            ):
+                raise ValueError("delegation_accept action approval required before acceptance")
+        record = self.delegation_service.apply_review_decision(
+            run_state=run_state,
+            delegation=record,
+            decision=decision,
+            reviewed_by=reviewed_by,
+            notes=notes,
+            parent_task_state=parent_task,
+        )
+        run_state.delegations[delegation_id] = record
+        refresh_nonterminal_statuses(plan, run_state)
+        previous_status = run_state.status
+        self._update_run_status(plan, run_state, previous_status)
+        run_state.summary = summarize_tasks(run_state)
+        self._emit_event(
+            run_state,
+            f"delegation_review_{decision}",
+            {
+                "delegation_id": delegation_id,
+                "parent_task_id": record.parent_task_id,
+                "decision": decision,
+                "reviewed_by": reviewed_by,
+            },
+        )
+        self.store.save_run_state(run_id, run_state.to_dict())
+        return run_state
+
     def _update_run_status(self, plan: Plan, run_state: RunState, previous_status: str) -> None:
         states = [state.status for state in run_state.tasks.values()]
         if states and all(status == "completed" for status in states):
             run_state.status = "completed"
             run_state.ended_at = run_state.ended_at or now_iso()
-        elif any(status in {"ready", "running"} for status in states):
+        elif any(status in {"ready", "running", "delegating", "waiting_review"} for status in states):
             run_state.status = "running"
             run_state.ended_at = None
-        elif any(status == "failed" for status in states):
+        elif any(status == "failed" for status in states) and not any(
+            status in {"ready", "running", "delegating", "waiting_review"} for status in states
+        ):
             run_state.status = "failed"
             run_state.ended_at = run_state.ended_at or now_iso()
         elif not has_live_nonterminal_tasks(plan, run_state):
@@ -206,73 +281,81 @@ class DelegationOutcome:
             {"task_id": next_task.task_id, "attempt": task_state.attempts, "status": "running"},
         )
 
-        artifacts = []
-        try:
-            result = self.adapter.execute_task(
-                task=next_task,
+        if next_task.execution.kind == "delegate":
+            run_state, _ = self.delegation_service.start_delegation(
+                plan=plan,
                 run_state=run_state,
-                attempt=task_state.attempts,
-                trace_id=str(run_state.metadata["trace_id"]),
+                task=next_task,
+                trace_emitter=lambda event, payload=None: self._emit_event(run_state, event, payload),
             )
-        except Exception as exc:  # pragma: no cover - defensive catch for adapter errors
-            failure = failure_from_exception(exc)
-            result = None
         else:
-            failure = None
+            artifacts = []
+            try:
+                result = self.adapter.execute_task(
+                    task=next_task,
+                    run_state=run_state,
+                    attempt=task_state.attempts,
+                    trace_id=str(run_state.metadata["trace_id"]),
+                )
+            except Exception as exc:  # pragma: no cover - defensive catch for adapter errors
+                failure = failure_from_exception(exc)
+                result = None
+            else:
+                failure = None
 
-        if result is not None and result.ok:
-            for payload in result.artifacts:
-                artifacts.append(create_artifact(run_id, next_task.task_id, payload))
-            persist_artifacts(self.store, run_state, next_task.task_id, artifacts)
-            for artifact in artifacts:
+            if result is not None and result.ok:
+                for payload in result.artifacts:
+                    artifacts.append(create_artifact(run_id, next_task.task_id, payload))
+                persist_artifacts(self.store, run_state, next_task.task_id, artifacts)
+                for artifact in artifacts:
+                    self._emit_event(
+                        run_state,
+                        "artifact_created",
+                        {
+                            "task_id": next_task.task_id,
+                            "artifact_id": artifact.artifact_id,
+                            "artifact_type": artifact.type,
+                        },
+                    )
+                task_state.last_error = None
+                transition_task(run_state, next_task.task_id, "completed", set_ended=True)
                 self._emit_event(
                     run_state,
-                    "artifact_created",
-                    {
-                        "task_id": next_task.task_id,
-                        "artifact_id": artifact.artifact_id,
-                        "artifact_type": artifact.type,
-                    },
-                )
-            task_state.last_error = None
-            transition_task(run_state, next_task.task_id, "completed", set_ended=True)
-            self._emit_event(
-                run_state,
-                "task_completed",
-                {"task_id": next_task.task_id, "attempt": task_state.attempts, "status": "completed"},
-            )
-        else:
-            if failure is None:
-                failure = failure_from_result(result)  # type: ignore[arg-type]
-            task_state.last_error = failure.to_dict()
-            if should_retry(task_state.attempts, task_state.max_retries):
-                transition_task(run_state, next_task.task_id, "ready")
-                backoff = backoff_seconds(
-                    next_task.retry_policy.backoff_base_seconds,
-                    next_task.retry_policy.backoff_factor,
-                    task_state.attempts,
-                )
-                self._emit_event(
-                    run_state,
-                    "task_retry_scheduled",
-                    {
-                        "task_id": next_task.task_id,
-                        "attempt": task_state.attempts,
-                        "backoff_seconds": backoff,
-                    },
+                    "task_completed",
+                    {"task_id": next_task.task_id, "attempt": task_state.attempts, "status": "completed"},
                 )
             else:
-                transition_task(run_state, next_task.task_id, "failed", set_ended=True)
-                self._emit_event(
-                    run_state,
-                    "task_failed",
-                    {
-                        "task_id": next_task.task_id,
-                        "attempt": task_state.attempts,
-                        "error_code": failure.code,
-                        "error_message": failure.message,
-                    },
-                )
+                if failure is None:
+                    failure = failure_from_result(result)  # type: ignore[arg-type]
+                task_state.last_error = failure.to_dict()
+                if should_retry(task_state.attempts, task_state.max_retries):
+                    transition_task(run_state, next_task.task_id, "ready")
+                    backoff = backoff_seconds(
+                        next_task.retry_policy.backoff_base_seconds,
+                        next_task.retry_policy.backoff_factor,
+                        task_state.attempts,
+                    )
+                    self._emit_event(
+                        run_state,
+                        "task_retry_scheduled",
+                        {
+                            "task_id": next_task.task_id,
+                            "attempt": task_state.attempts,
+                            "backoff_seconds": backoff,
+                        },
+                    )
+                else:
+                    transition_task(run_state, next_task.task_id, "failed", set_ended=True)
+                    self._emit_event(
+                        run_state,
+                        "task_failed",
+                        {
+                            "task_id": next_task.task_id,
+                            "attempt": task_state.attempts,
+                            "error_code": failure.code,
+                            "error_message": failure.message,
+                        },
+                    )
 
         run_state.current_task_id = None
         refresh_nonterminal_statuses(plan, run_state)

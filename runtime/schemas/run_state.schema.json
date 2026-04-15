@@ -175,6 +175,63 @@
         "$ref": "delegation.schema.json"
       }
     },
+    "child_runs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "child_run_id",
+          "parent_run_id",
+          "parent_task_id",
+          "status",
+          "created_at",
+          "max_steps",
+          "steps_executed",
+          "timeout_seconds",
+          "tasks",
+          "artifacts"
+        ],
+        "properties": {
+          "child_run_id": { "type": "string" },
+          "parent_run_id": { "type": "string" },
+          "parent_task_id": { "type": "string" },
+          "status": { "type": "string" },
+          "created_at": { "type": "string" },
+          "started_at": { "type": ["string", "null"] },
+          "ended_at": { "type": ["string", "null"] },
+          "max_steps": { "type": "integer", "minimum": 1 },
+          "steps_executed": { "type": "integer", "minimum": 0 },
+          "timeout_seconds": { "type": "integer", "minimum": 1 },
+          "tasks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "task_id",
+                "status",
+                "attempts",
+                "max_retries",
+                "depends_on",
+                "produced_artifacts"
+              ],
+              "properties": {
+                "task_id": { "type": "string" },
+                "status": { "type": "string" },
+                "attempts": { "type": "integer", "minimum": 0 },
+                "max_retries": { "type": "integer", "minimum": 0 },
+                "last_error": { "type": ["object", "null"] },
+                "depends_on": { "type": "array", "items": { "type": "string" } },
+                "produced_artifacts": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            }
+          },
+          "artifacts": { "type": "array", "items": { "type": "string" } },
+          "last_error": { "type": ["object", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
     "action_approvals": {
       "type": "object",
       "additionalProperties": {

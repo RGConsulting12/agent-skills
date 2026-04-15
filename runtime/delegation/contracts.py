@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Dict, List, Optional
+from typing import List
 
 from runtime.models import (
     DelegationRecord,

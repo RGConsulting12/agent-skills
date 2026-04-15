@@ -28,12 +28,12 @@ class SchemaRegistry:
             "run_state": self._load("run_state.schema.json"),
             "delegation": self._load("delegation.schema.json"),
         }
-        resolver = RefResolver(base_uri=self.schema_dir.as_uri() + "/", referrer=self._schemas["plan"])
+        resolver = RefResolver(base_uri=self.schema_dir.as_uri() + "/", referrer=self._schemas["run_state"])
         self._validators = {
             "plan": Draft202012Validator(self._schemas["plan"], resolver=resolver),
             "task": Draft202012Validator(self._schemas["task"]),
             "artifact": Draft202012Validator(self._schemas["artifact"]),
-            "run_state": Draft202012Validator(self._schemas["run_state"]),
+            "run_state": Draft202012Validator(self._schemas["run_state"], resolver=resolver),
             "delegation": Draft202012Validator(self._schemas["delegation"]),
         }
 

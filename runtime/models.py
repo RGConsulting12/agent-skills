@@ -620,7 +620,7 @@ class Artifact:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        data: Dict[str, Any] = {
             "artifact_id": self.artifact_id,
             "run_id": self.run_id,
             "producer_task_id": self.producer_task_id,
@@ -629,11 +629,15 @@ class Artifact:
             "path": self.path,
             "content": self.content,
             "created_at": self.created_at,
-            "producer_delegation_id": self.producer_delegation_id,
-            "producer_child_run_id": self.producer_child_run_id,
-            "lineage_depth": self.lineage_depth,
             "metadata": self.metadata,
         }
+        if self.producer_delegation_id is not None:
+            data["producer_delegation_id"] = self.producer_delegation_id
+        if self.producer_child_run_id is not None:
+            data["producer_child_run_id"] = self.producer_child_run_id
+        if self.lineage_depth is not None:
+            data["lineage_depth"] = self.lineage_depth
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Artifact":

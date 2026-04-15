@@ -176,14 +176,17 @@
       ],
       "properties": {
         "decision": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "enum": [
-            "accepted",
-            "rejected",
-            null
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "rejected"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "reviewed_by": {
@@ -196,8 +199,7 @@
           "type": [
             "string",
             "null"
-          ],
-          "format": "date-time"
+          ]
         },
         "notes": {
           "type": [

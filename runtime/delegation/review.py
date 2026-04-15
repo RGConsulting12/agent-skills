@@ -18,9 +18,9 @@ def apply_review(
     if decision not in {"accepted", "rejected"}:
         raise ValueError("decision must be accepted or rejected")
     delegation.status = decision
-    delegation.review_decision = decision
-    delegation.reviewed_by = reviewed_by
-    delegation.reviewed_at = now_iso()
-    delegation.review_notes = notes
-    delegation.updated_at = delegation.reviewed_at
+    delegation.review.decision = decision
+    delegation.review.reviewed_by = reviewed_by
+    delegation.review.reviewed_at = now_iso()
+    delegation.review.notes = notes
+    delegation.updated_at = delegation.review.reviewed_at or now_iso()
 

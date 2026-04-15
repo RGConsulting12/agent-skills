@@ -16,7 +16,7 @@ from runtime.workspace.storage import StateStore
 
 def _build_runner(args: argparse.Namespace) -> PlanRunner:
     if args.adapter != "generic":
-        raise ValueError("Phase 1 supports only --adapter generic")
+        raise ValueError("Runtime supports only --adapter generic")
     return PlanRunner(
         store=StateStore(args.state_dir),
         logger=TraceLogger(args.logs_dir),

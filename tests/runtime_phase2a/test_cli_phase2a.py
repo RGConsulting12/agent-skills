@@ -25,24 +25,13 @@ def write_delegate_plan(path: Path) -> None:
                     "delegation": {
                         "objective": "child",
                         "tool_allowlist": ["noop"],
-                        "path_allowlist": ["runtime/examples/**"],
+                        "path_allowlist": ["/workspace/runtime/examples"],
                         "path_denylist": [],
                         "max_steps": 1,
                         "timeout_seconds": 30,
                         "expected_artifact_types": ["report"],
                         "max_delegation_attempts": 1,
-                        "review_required": True,
-                        "child_task": {
-                            "task_id": "CHILD",
-                            "title": "child",
-                            "execution": {
-                                "kind": "noop",
-                                "emit_artifact": {
-                                    "type": "report",
-                                    "content": {"ok": True},
-                                },
-                            },
-                        },
+                        "review_required": True
                     },
                 },
             }
@@ -117,7 +106,31 @@ class Phase2ACLITests(unittest.TestCase):
             self.assertEqual(status_proc.returncode, 0, status_proc.stderr)
             data = json.loads(status_proc.stdout)
             self.assertEqual(len(data), 1)
-            delegation_id = data[0]["delegation_id"]
+            delegation_id = next(iter(data))
+
+            approve_proc = subprocess.run(
+                cmd_base
+                + [
+                    "approve-action",
+                    "--run-id",
+                    "run-p2a-cli",
+                    "--category",
+                    "delegation_accept",
+                    "--target-id",
+                    delegation_id,
+                    "--approved-by",
+                    "security",
+                    "--state-dir",
+                    str(state_dir),
+                    "--logs-dir",
+                    str(logs_dir),
+                ],
+                cwd="/workspace",
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(approve_proc.returncode, 0, approve_proc.stderr)
 
             review_proc = subprocess.run(
                 cmd_base

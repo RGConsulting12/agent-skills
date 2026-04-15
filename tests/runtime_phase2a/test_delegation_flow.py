@@ -76,7 +76,19 @@ class DelegationFlowTests(unittest.TestCase):
         self.assertTrue(draft_artifacts)
         self.assertTrue(all(a["status"] == "draft" for a in draft_artifacts))
 
-        self.runner.review_delegation("run-p2a", delegation_id, "accepted", "reviewer", notes="ok")
+        self.runner.approve_action(
+            "run-p2a",
+            category="delegation_accept",
+            target_id=delegation_id,
+            approved_by="security",
+        )
+        self.runner.review_delegation(
+            "run-p2a",
+            delegation_id,
+            decision="accepted",
+            reviewed_by="reviewer",
+            notes="ok",
+        )
         run_state = self.runner.load_run_state("run-p2a")
         self.assertEqual(run_state.tasks["T1"].status, "completed")
         final_artifacts = [
@@ -87,9 +99,11 @@ class DelegationFlowTests(unittest.TestCase):
         self.assertTrue(all(a["status"] == "final" for a in final_artifacts))
 
     def test_missing_required_outputs_fails_attempt(self) -> None:
-        payload = phase2a_plan()
-        payload["tasks"][0]["execution"]["delegation"]["objective"] = "missing-output"
-        plan = validate_plan_dict(payload)
+        plan = validate_plan_dict(phase2a_plan())
+        # Keep plan schema-valid, then force child output omission at runtime to
+        # exercise missing-output failure handling.
+        plan.tasks[0].execution.delegation["child_omit_expected_outputs"] = True
+        plan.tasks[0].execution.delegation["expected_artifact_types"] = ["report", "patch"]
         self.runner.init_run(plan, "run-missing")
         run_state, _ = self.runner.step("run-missing")
         self.assertEqual(run_state.tasks["T1"].status, "ready")
@@ -102,7 +116,8 @@ class DelegationFlowTests(unittest.TestCase):
         run_state, _ = self.runner.step("run-reentry")
         delegation_id = run_state.tasks["T1"].active_delegation_id
         with self.assertRaises(ValueError):
-            self.runner.delegation_manager.start_delegation(
+            self.runner.delegation_service.start_delegation(
+                plan=plan,
                 run_state=run_state,
                 task=plan.tasks[0],
                 trace_emitter=lambda _event, _payload=None: None,
@@ -116,7 +131,13 @@ class DelegationFlowTests(unittest.TestCase):
         self.runner.init_run(plan, "run-exhaust")
         run_state, _ = self.runner.step("run-exhaust")
         delegation_id = run_state.tasks["T1"].active_delegation_id
-        self.runner.review_delegation("run-exhaust", delegation_id, "rejected", "reviewer", notes="nope")
+        self.runner.review_delegation(
+            "run-exhaust",
+            delegation_id,
+            decision="rejected",
+            reviewed_by="reviewer",
+            notes="nope",
+        )
         run_state = self.runner.load_run_state("run-exhaust")
         self.assertEqual(run_state.tasks["T1"].status, "failed")
         self.assertEqual(run_state.delegations[delegation_id].status, "exhausted")

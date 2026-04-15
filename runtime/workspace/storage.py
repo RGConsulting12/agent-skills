@@ -93,3 +93,11 @@ class StateStore:
         validate_delegation(data)
         return data
 
+    def save_child_run(self, run_id: str, child_run_data: Dict[str, Any]) -> None:
+        path = self.run_dir(run_id) / "child_runs" / f"{child_run_data['child_run_id']}.json"
+        self.atomic_write_json(path, child_run_data)
+
+    def load_child_run(self, run_id: str, child_run_id: str) -> Dict[str, Any]:
+        path = self.run_dir(run_id) / "child_runs" / f"{child_run_id}.json"
+        return dict(self.read_json(path))
+

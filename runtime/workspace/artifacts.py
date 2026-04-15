@@ -18,6 +18,7 @@ def create_artifact(
     producer_delegation_id: str | None = None,
     producer_child_run_id: str | None = None,
     lineage_depth: int | None = None,
+    status_override: str | None = None,
 ) -> Artifact:
     """Create a typed artifact from adapter payload."""
     return Artifact(
@@ -28,7 +29,7 @@ def create_artifact(
         producer_child_run_id=producer_child_run_id,
         lineage_depth=lineage_depth,
         type=payload.type,
-        status=payload.status,
+        status=status_override or payload.status,
         path=payload.path,
         content=payload.content,
         created_at=created_at or now_iso(),
