@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "plan_id": "plan-sample-001",
+  "title": "Phase 1 sample runtime plan",
+  "description": "Demonstrates task-level approvals, deterministic scheduling, and one-way markdown rendering.",
+  "created_at": "2026-04-15T10:00:00Z",
+  "created_by": "agent-skills",
+  "tasks": [
+    {
+      "task_id": "T1",
+      "title": "Create baseline spec artifact",
+      "depends_on": [],
+      "priority": 10,
+      "approval_required": false,
+      "execution": {
+        "kind": "noop",
+        "emit_artifact": {
+          "type": "spec",
+          "status": "final",
+          "content": {
+            "summary": "Spec baseline created"
+          }
+        }
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_base_seconds": 1,
+        "backoff_factor": 2
+      },
+      "expected_artifacts": [
+        "spec"
+      ]
+    },
+    {
+      "task_id": "T2",
+      "title": "Run implementation check command",
+      "depends_on": [
+        "T1"
+      ],
+      "priority": 8,
+      "approval_required": true,
+      "execution": {
+        "kind": "shell",
+        "command": "echo \"implement check ok\"",
+        "cwd": ".",
+        "timeout_seconds": 60
+      },
+      "retry_policy": {
+        "max_retries": 1,
+        "backoff_base_seconds": 1,
+        "backoff_factor": 2
+      },
+      "expected_artifacts": [
+        "log"
+      ]
+    },
+    {
+      "task_id": "T3",
+      "title": "Finalize plan snapshot artifact",
+      "depends_on": [
+        "T2"
+      ],
+      "priority": 5,
+      "approval_required": false,
+      "execution": {
+        "kind": "noop",
+        "emit_artifact": {
+          "type": "plan_snapshot",
+          "status": "final",
+          "content": {
+            "note": "Execution complete"
+          }
+        }
+      },
+      "retry_policy": {
+        "max_retries": 0,
+        "backoff_base_seconds": 1,
+        "backoff_factor": 2
+      },
+      "expected_artifacts": [
+        "plan_snapshot"
+      ]
+    }
+  ],
+  "metadata": {
+    "phase": "1"
+  }
+}
+

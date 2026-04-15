@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "run_state.schema.json",
+  "title": "Phase2ARunState",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "plan_id",
+    "status",
+    "created_at",
+    "tasks",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "initialized",
+        "running",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "ended_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "attempts",
+          "max_retries",
+          "approval",
+          "depends_on",
+          "produced_artifacts"
+        ],
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_approval",
+              "blocked",
+              "ready",
+              "running",
+              "delegating",
+              "waiting_review",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "delegation_attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_delegation_attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "delegation_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "active_delegation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "approval": {
+            "type": "object",
+            "required": [
+              "required",
+              "approved"
+            ],
+            "properties": {
+              "required": {
+                "type": "boolean"
+              },
+              "approved": {
+                "type": "boolean"
+              },
+              "approved_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "approved_at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "produced_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "delegations": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "delegation.schema.json"
+      }
+    },
+    "child_runs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "child_run_id",
+          "parent_run_id",
+          "parent_task_id",
+          "status",
+          "created_at",
+          "max_steps",
+          "steps_executed",
+          "timeout_seconds",
+          "tasks",
+          "artifacts"
+        ],
+        "properties": {
+          "child_run_id": { "type": "string" },
+          "parent_run_id": { "type": "string" },
+          "parent_task_id": { "type": "string" },
+          "status": { "type": "string" },
+          "created_at": { "type": "string" },
+          "started_at": { "type": ["string", "null"] },
+          "ended_at": { "type": ["string", "null"] },
+          "max_steps": { "type": "integer", "minimum": 1 },
+          "steps_executed": { "type": "integer", "minimum": 0 },
+          "timeout_seconds": { "type": "integer", "minimum": 1 },
+          "tasks": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": [
+                "task_id",
+                "status",
+                "attempts",
+                "max_retries",
+                "depends_on",
+                "produced_artifacts"
+              ],
+              "properties": {
+                "task_id": { "type": "string" },
+                "status": { "type": "string" },
+                "attempts": { "type": "integer", "minimum": 0 },
+                "max_retries": { "type": "integer", "minimum": 0 },
+                "last_error": { "type": ["object", "null"] },
+                "depends_on": { "type": "array", "items": { "type": "string" } },
+                "produced_artifacts": { "type": "array", "items": { "type": "string" } }
+              },
+              "additionalProperties": false
+            }
+          },
+          "artifacts": { "type": "array", "items": { "type": "string" } },
+          "last_error": { "type": ["object", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "action_approvals": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "category",
+          "target_id",
+          "approved",
+          "approved_by",
+          "approved_at"
+        ],
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "approved_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "approved_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "current_task_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "object"
+    },
+    "pending": {
+      "type": "object",
+      "properties": {
+        "derived_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task_approvals_pending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "delegation_reviews_pending": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "action_approvals_pending": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "category",
+              "target_id"
+            ],
+            "properties": {
+              "category": {
+                "type": "string"
+              },
+              "target_id": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "reconciliation": {
+      "type": "object",
+      "properties": {
+        "last_reconciled_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "algorithm_version": {
+          "type": "string"
+        },
+        "repairs_applied": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "last_journal_offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}
+

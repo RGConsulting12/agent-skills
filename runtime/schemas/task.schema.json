@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "task.schema.json",
+  "title": "Phase1Task",
+  "type": "object",
+  "required": [
+    "task_id",
+    "title",
+    "execution"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "priority": {
+      "type": "integer"
+    },
+    "approval_required": {
+      "type": "boolean"
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "noop",
+            "shell",
+            "delegate"
+          ]
+        },
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "emit_artifact": {
+          "type": "object"
+        },
+        "delegation": {
+          "type": "object",
+          "required": [
+            "objective",
+            "tool_allowlist",
+            "path_allowlist",
+            "max_steps",
+            "timeout_seconds",
+            "expected_artifact_types",
+            "max_delegation_attempts",
+            "review_required"
+          ],
+          "properties": {
+            "objective": {
+              "type": "string",
+              "minLength": 1
+            },
+            "input_artifact_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "copy_in_paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tool_allowlist": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "noop",
+                  "shell"
+                ]
+              }
+            },
+            "path_allowlist": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "path_denylist": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "max_steps": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "expected_artifact_types": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            },
+            "max_delegation_attempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "review_required": {
+              "type": "boolean",
+              "const": true
+            },
+            "policy_override": {
+              "type": "object",
+              "properties": {
+                "paths": {
+                  "type": "object",
+                  "properties": {
+                    "allowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "denylist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "allowlist": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "noop",
+                          "shell"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "approvals": {
+                  "type": "object",
+                  "properties": {
+                    "required_categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "retry_policy": {
+      "type": "object",
+      "properties": {
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoff_base_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backoff_factor": {
+          "type": "number",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "expected_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution": {
+            "properties": {
+              "kind": {
+                "const": "shell"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "execution": {
+            "required": [
+              "kind",
+              "command"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "execution": {
+            "properties": {
+              "kind": {
+                "const": "delegate"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "execution": {
+            "required": [
+              "kind",
+              "delegation"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}
+
