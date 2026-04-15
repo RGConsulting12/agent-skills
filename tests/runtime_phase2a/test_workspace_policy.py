@@ -66,6 +66,9 @@ class WorkspacePolicyTests(unittest.TestCase):
         run_state, _ = self.runner.step("run-pol")
         self.assertEqual(run_state.tasks["T1"].status, "ready")
         self.assertEqual(run_state.tasks["T1"].last_error["code"], "DELEGATION_POLICY_DENIED")
+        delegation_id = run_state.tasks["T1"].delegation_ids[0]
+        self.assertIn(delegation_id, run_state.delegations)
+        self.assertEqual(run_state.delegations[delegation_id].status, "failed")
 
     def test_action_approval_separate_from_task_approval(self) -> None:
         plan = validate_plan_dict(base_plan())

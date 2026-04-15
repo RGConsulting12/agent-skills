@@ -7,7 +7,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from runtime.models import DelegationRecord
 from runtime.policy.engine import PolicyEngine
@@ -68,9 +68,14 @@ class DelegationWorkspace:
         repo = Path(repo_root).resolve()
         copied = []
         for original in delegation.request.copy_in_paths:
-            rel = _safe_relpath(original)
-            if not policy.path_allowed(rel, allowlist=delegation.request.path_allowlist, denylist=delegation.request.path_denylist):
-                raise ValueError(f"copy-in path not allowed by policy: {rel}")
+            allowed, rel, reason = policy.decide_repo_path(
+                repo_root=repo,
+                requested_path=original,
+                allowlist=delegation.request.path_allowlist,
+                denylist=delegation.request.path_denylist,
+            )
+            if not allowed:
+                raise ValueError(reason)
             src = repo / rel
             if not src.exists() or not src.is_file():
                 raise ValueError(f"copy-in source missing: {rel}")

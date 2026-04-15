@@ -90,6 +90,8 @@ class DelegationService:
                 "attempt": task_state.delegation_attempts,
             },
         )
+        run_state.delegations[record.delegation_id] = record
+        self.store.save_delegation(run_state.run_id, record.to_dict())
 
         try:
             self.policy.enforce_tool_allowlist(request.tool_allowlist, "noop")
@@ -121,6 +123,18 @@ class DelegationService:
                 },
             )
         except (PolicyError, ValueError) as exc:
+            record.status = "failed"
+            record.result = DelegationResult(
+                status="failed",
+                summary=str(exc),
+                produced_artifact_ids=[],
+                output_manifest={},
+                evidence={"error_code": "DELEGATION_POLICY_DENIED"},
+                submitted_at=now_iso(),
+            )
+            record.updated_at = now_iso()
+            run_state.delegations[record.delegation_id] = record
+            self.store.save_delegation(run_state.run_id, record.to_dict())
             task_state.status = "ready"
             task_state.active_delegation_id = None
             task_state.last_error = {

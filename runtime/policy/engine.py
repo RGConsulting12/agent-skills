@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
@@ -26,30 +27,63 @@ class PolicyEngine:
         self.config = config or PolicyConfig()
 
     @staticmethod
-    def _normalize(path: str) -> str:
-        return Path(path).as_posix().lstrip("/")
+    def _normalize_repo_relative(repo_root: Path, value: str) -> str | None:
+        """Normalize path or pattern into repo-relative POSIX form."""
+        candidate = Path(value)
+        if candidate.is_absolute():
+            try:
+                rel = candidate.resolve().relative_to(repo_root.resolve()).as_posix()
+            except ValueError:
+                return None
+        else:
+            rel = candidate.as_posix()
+        normalized = os.path.normpath(rel).lstrip("/")
+        if normalized in {".", ""}:
+            return ""
+        if normalized.startswith(".."):
+            return None
+        return normalized
 
-    def path_allowed(
+    @staticmethod
+    def _matches_rule(candidate: str, rule: str) -> bool:
+        if rule in {"", "."}:
+            return True
+        if fnmatch(candidate, rule):
+            return True
+        return candidate == rule or candidate.startswith(f"{rule.rstrip('/')}/")
+
+    def decide_repo_path(
         self,
-        path: str,
         *,
+        repo_root: Path,
+        requested_path: str,
         allowlist: Iterable[str],
         denylist: Iterable[str],
-    ) -> bool:
-        """Return True when a path passes allowlist/denylist checks.
+    ) -> tuple[bool, str, str]:
+        """Return decision, normalized path, and rejection reason."""
+        normalized = self._normalize_repo_relative(repo_root, requested_path)
+        if normalized is None:
+            return False, "", f"path escapes repo root: {requested_path}"
 
-        Patterns support simple globs such as `runtime/examples/**`.
-        """
-        candidate = self._normalize(path)
-        allow = [self._normalize(item) for item in allowlist]
-        deny = [self._normalize(item) for item in denylist]
+        allow_rules: list[str] = []
+        for item in allowlist:
+            rule = self._normalize_repo_relative(repo_root, item)
+            if rule is not None:
+                allow_rules.append(rule)
 
-        if allow:
-            if not any(fnmatch(candidate, pattern) or candidate.startswith(pattern.rstrip("/")) for pattern in allow):
-                return False
-        if any(fnmatch(candidate, pattern) or candidate.startswith(pattern.rstrip("/")) for pattern in deny):
-            return False
-        return True
+        deny_rules: list[str] = []
+        for item in denylist:
+            rule = self._normalize_repo_relative(repo_root, item)
+            if rule is not None:
+                deny_rules.append(rule)
+
+        if allow_rules and not any(
+            self._matches_rule(normalized, rule) for rule in allow_rules
+        ):
+            return False, normalized, f"path not in allowlist: {requested_path}"
+        if any(self._matches_rule(normalized, rule) for rule in deny_rules):
+            return False, normalized, f"path blocked by denylist: {requested_path}"
+        return True, normalized, ""
 
     @staticmethod
     def _is_within(base: Path, candidate: Path) -> bool:
@@ -68,20 +102,15 @@ class PolicyEngine:
         requested_paths: Iterable[str],
     ) -> None:
         """Ensure requested paths are allowlisted and not denylisted."""
-        allow = [Path(item) for item in path_allowlist]
-        deny = [Path(item) for item in path_denylist]
         for raw in requested_paths:
-            req = Path(raw)
-            absolute = (repo_root / req).resolve()
-            if not self._is_within(repo_root, absolute):
-                raise PolicyError(f"path escapes repo root: {raw}")
-            if allow:
-                allowed = any(self._is_within((repo_root / item).resolve(), absolute) for item in allow)
-                if not allowed:
-                    raise PolicyError(f"path not in allowlist: {raw}")
-            denied = any(self._is_within((repo_root / item).resolve(), absolute) for item in deny)
-            if denied:
-                raise PolicyError(f"path blocked by denylist: {raw}")
+            allowed, _normalized, reason = self.decide_repo_path(
+                repo_root=repo_root,
+                requested_path=raw,
+                allowlist=path_allowlist,
+                denylist=path_denylist,
+            )
+            if not allowed:
+                raise PolicyError(reason)
 
     @staticmethod
     def enforce_tool_allowlist(tool_allowlist: Iterable[str], requested_tool: str) -> None:

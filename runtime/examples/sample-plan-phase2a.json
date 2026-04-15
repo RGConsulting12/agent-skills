@@ -50,31 +50,7 @@
             "child-report"
           ],
           "max_delegation_attempts": 2,
-          "review_required": true,
-          "child_plan": {
-            "schema_version": "1.0",
-            "plan_id": "child-plan-phase2a-001",
-            "title": "Child delegated run",
-            "description": "Simple child plan",
-            "created_at": "2026-04-15T10:00:01Z",
-            "created_by": "agent-skills",
-            "tasks": [
-              {
-                "task_id": "C1",
-                "title": "Emit delegated output artifact",
-                "execution": {
-                  "kind": "noop",
-                  "emit_artifact": {
-                    "type": "child-report",
-                    "status": "final",
-                    "content": {
-                      "result": "child analysis complete"
-                    }
-                  }
-                }
-              }
-            ]
-          }
+          "review_required": true
         }
       }
     },

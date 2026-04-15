@@ -5,8 +5,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from runtime.adapters.generic_adapter import GenericAdapter
+from runtime.models import ChildRunState, ExecutionResult, now_iso
 from runtime.observability.logger import TraceLogger
 from runtime.orchestrator.runner import PlanRunner
 from runtime.planner.validator import validate_plan_dict
@@ -100,12 +102,30 @@ class DelegationFlowTests(unittest.TestCase):
 
     def test_missing_required_outputs_fails_attempt(self) -> None:
         plan = validate_plan_dict(phase2a_plan())
-        # Keep plan schema-valid, then force child output omission at runtime to
-        # exercise missing-output failure handling.
-        plan.tasks[0].execution.delegation["child_omit_expected_outputs"] = True
-        plan.tasks[0].execution.delegation["expected_artifact_types"] = ["report", "patch"]
         self.runner.init_run(plan, "run-missing")
-        run_state, _ = self.runner.step("run-missing")
+
+        def fake_child(_task, request, *, child_run_id: str, parent_run_id: str):
+            child = ChildRunState(
+                child_run_id=child_run_id,
+                parent_run_id=parent_run_id,
+                parent_task_id="T1",
+                status="completed",
+                created_at=now_iso(),
+                started_at=now_iso(),
+                ended_at=now_iso(),
+                max_steps=request.max_steps,
+                steps_executed=1,
+                timeout_seconds=request.timeout_seconds,
+                tasks={},
+                artifacts=[],
+                last_error=None,
+            )
+            # Successful child run with no outputs should trigger
+            # DELEGATION_MISSING_OUTPUTS in parent bookkeeping.
+            return child, ExecutionResult(ok=True, summary="child success", artifacts=[])
+
+        with patch("runtime.delegation.service.run_child_inline", side_effect=fake_child):
+            run_state, _ = self.runner.step("run-missing")
         self.assertEqual(run_state.tasks["T1"].status, "ready")
         self.assertEqual(run_state.tasks["T1"].delegation_attempts, 1)
         self.assertIn("DELEGATION_MISSING_OUTPUTS", run_state.tasks["T1"].last_error["code"])

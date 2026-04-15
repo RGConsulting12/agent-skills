@@ -41,21 +41,16 @@ python3 -m runtime.cli init-run \
 python3 -m runtime.cli step --run-id demo-run-p2a
 python3 -m runtime.cli status --run-id demo-run-p2a --json
 
-python3 -m runtime.cli approve-task \
-  --run-id demo-run-p2a \
-  --task-id T2 \
-  --approved-by you
-
-python3 -m runtime.cli run --run-id demo-run-p2a --max-steps 2
-python3 -m runtime.cli delegate-status --run-id demo-run-p2a --json
+python3 -m runtime.cli run --run-id demo-run-p2a --max-steps 1
+DELEGATION_ID=$(python3 -m runtime.cli delegate-status --run-id demo-run-p2a --json | python3 -c "import json,sys; print(next(iter(json.load(sys.stdin))))")
 python3 -m runtime.cli approve-action \
   --run-id demo-run-p2a \
   --category delegation_accept \
-  --target-id dlg-0001 \
+  --target-id "$DELEGATION_ID" \
   --approved-by you
 python3 -m runtime.cli review-delegation \
   --run-id demo-run-p2a \
-  --delegation-id dlg-0001 \
+  --delegation-id "$DELEGATION_ID" \
   --decision accepted \
   --reviewed-by you
 python3 -m runtime.cli run --run-id demo-run-p2a
@@ -74,7 +69,8 @@ Generated files:
 ## Run tests
 
 ```bash
-python3 -m unittest discover -s tests -p "test_*.py"
+python3 -m unittest discover -s tests/runtime_phase1 -v
+python3 -m unittest discover -s tests/runtime_phase2a -v
 ```
 
 ## Phase 2A notes
